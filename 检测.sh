@@ -1,0 +1,1 @@
+${0%/*}/bin/v2udp.bin check

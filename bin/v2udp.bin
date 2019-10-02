@@ -1,0 +1,260 @@
+#!/system/bin/sh
+DIR="${0%/*}"
+cd $DIR/../
+. ./config.ini
+if [ -e config/${file}.ini ]; then
+. config/${file}.ini
+else
+echo "请检查配置文件是否正确!\n"
+fi
+export PATH=$DIR:$PATH
+
+stopServer() {
+  # 关闭程序
+  busybox killall v2ray pdnsd CProxy 2>&-
+  # 清除规则
+  ip rule del fwmark 0x6688 table 121
+  ip route del local 0.0.0.0/0 dev lo table 121
+  iptables -t nat -F OUTPUT
+  iptables -t nat -F PREROUTING
+  iptables -t mangle -F OUTPUT
+  iptables -t mangle -F PREROUTING
+  if [ "$denyIpv6" == '1' ]; then
+    ip6tables -t mangle -P OUTPUT DROP
+    ip6tables -t mangle -P FORWARD DROP
+  else
+    ip6tables -t mangle -P OUTPUT ACCEPT
+    ip6tables -t mangle -P FORWARD ACCEPT
+  fi
+}
+
+getIp() {
+  ip=${addr%:*}
+  if [[ $(echo $ip | grep -E '[a-z\|A-Z]') != "" ]]; then
+    isip=$(busybox wget -q -T1 -O- http://119.29.29.29/d?dn=$ip | busybox cut -d';' -f1)
+    checkip=$(echo "$isip" | busybox grep '\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\}')
+    if [ "$isip" != "" -a "$isip" = "$checkip" ];then
+      ip=$isip
+    else
+      echo "wget解析IP失败！($isip)\n"
+      exit
+    fi
+  fi
+}
+
+forward() {
+  echo 1 > /proc/sys/net/ipv4/ip_forward
+  echo 2 > /proc/sys/net/ipv4/conf/default/rp_filter
+  echo 2 > /proc/sys/net/ipv4/conf/all/rp_filter
+  echo 1 > /proc/sys/net/ipv4/conf/all/send_redirects
+}
+
+iptablesAndIp() {
+  # 防跳
+  iptables -t nat -A OUTPUT -d $ip -p tcp --dport ${addr#*:} -m owner --uid-owner 0 -j ACCEPT
+  iptables -t nat -A OUTPUT -o wlan+ -j ACCEPT
+  iptables -t nat -A OUTPUT -o tun+ -j ACCEPT
+  iptables -t nat -A OUTPUT -o lo -j ACCEPT
+  # 防止WiFi共享获取不到ip
+  iptables -t nat -A OUTPUT -d 192.168/16 -j ACCEPT
+  iptables -t nat -A OUTPUT -p tcp -j REDIRECT --to-ports 1230
+  iptables -t nat -A OUTPUT -p udp --dport 53 -j REDIRECT --to-ports 1240
+  # 放行QQ微信上语音/视频通话,多个udp端口用,隔开
+  if [[ "$fxqw" == "1" ]];then
+    iptables -t nat -A OUTPUT -p udp -m multiport --dports 8000 -j ACCEPT
+  fi
+  [ "$mudp" = '0' ] && iptables -t nat -A OUTPUT ! -p tcp -j REDIRECT --to-ports 1250
+  [ "$mudp" = '1' ] && iptables -t nat -A OUTPUT ! -p udp -j REDIRECT --to-ports 1250
+  
+  # 共享规则
+  iptables -t nat -A PREROUTING -s 192.168/16 ! -d 192.168/16 -p tcp -j REDIRECT --to-ports 1230
+  [ "$mudp" = '1' ] || iptables -t nat -A PREROUTING -s 192.168/16 -p udp --dport 53 -j REDIRECT --to-ports 53
+  [ "$mudp" = '0' ] && iptables -t nat -A PREROUTING ! -p tcp -j REDIRECT --to-ports 1250
+  [ "$mudp" = '1' ] && iptables -t nat -A PREROUTING ! -p udp -j REDIRECT --to-ports 1250
+
+  # 免udp规则
+  if [[ "$mudp" == "1" ]];then
+    ip rule add fwmark 0x6688 table 121
+    ip route add local 0.0.0.0/0 dev lo table 121
+    # PREROUTING
+    iptables -t mangle -A PREROUTING ! -p udp -j ACCEPT
+    for allowIp in 127/8 192.168/16 10/8 224/3 0/8 172.16/12 100.64/10 169.254/16
+    do
+      iptables -t mangle -A PREROUTING -d $allowIp -j ACCEPT
+    done
+    iptables -t mangle -A PREROUTING ! -i tun+ -p udp -j TPROXY --on-port 1230 --tproxy-mark 0x6688
+    # OUTPUT
+    iptables -t mangle -A OUTPUT -o wlan+ -j ACCEPT
+    iptables -t mangle -A OUTPUT -o tun+ -j ACCEPT
+    iptables -t mangle -A OUTPUT ! -d 192.168/16 ! -o lo -p udp -j MARK --set-mark 0x6688
+  fi
+  # 禁止INVALID包
+  iptables -t mangle -A OUTPUT -m state --state INVALID -j DROP
+  sleep 0.02
+}
+
+dataControl() {
+  if [ "$netstat" != "$1" -a "$kgwl" = "1" ];then
+  wifiip=$(busybox ifconfig wlan0 2>&- | busybox grep 'inet addr')
+    if [ "$wifiip" = "" ];then
+      [ "$1" = "y" ] && svc data enable && sleep 0.1
+      [ "$1" = "n" ] && svc data disable && sleep 0.01
+      netstat="$1"
+    fi
+  fi
+}
+
+makeConfig() {
+if [[ "$dns" == '0' ]]; then
+  echo 'global {
+      perm_cache = 2048;
+      cache_dir = "'$cacheDIR'";
+      server_ip = 0.0.0.0;
+      server_port = 1240;
+      query_method = tcp_only;
+      run_ipv4 = on;
+      min_ttl = 15m;
+      max_ttl = 1w;
+      timeout = 10;
+      daemon = on;
+  }
+  server {
+      label = "local";
+      ip = '$pdnsdDNS';
+      reject_policy = negate;
+      reject_recursively = on;
+      timeout = 5;
+  }' > bin/pdnsd.conf
+elif [[ "$dns" == '1' ]]; then
+[ "$cacheDIR" = "/dev/null" ] && \
+cacheFile="/dev/null" || \
+cacheFile="$cacheDIR"/cp.dnsCache
+  echo "
+    global {dns_listen = 1240;}
+    httpdns {
+        addr = $CProxyDNS:53;
+        cachePath = $cacheFile;
+        cacheLimit = 256;
+        mode = tcpdns;
+    }
+  " > bin/CProxy.conf
+fi
+echo '{
+  "inbounds": [{
+    "port": 1230,
+    "protocol": "dokodemo-door",
+    "settings": {
+      "network": "tcp,udp",
+      "followRedirect": true
+    }
+  }],
+  "outbounds": [{
+    "protocol": "vmess",
+    "settings": {
+      "vnext": [{
+        "address": "'$ip'",
+        "port": '${addr#*:}',
+        "users": [{
+          "id": "'$uuid'",
+          "alterId": '$alterId',
+          "security": "'$security'"
+        }]
+      }]
+    },' > config/config.json
+if [ "$method" == "ws" -o "$method" == "WS" ]; then
+echo '    "streamSettings": {
+      "network": "ws",
+      "wsSettings": {
+        "path": "'$path'",
+        "headers": {
+          "Host": "'$host'"
+        }
+      }
+    }
+  }]
+}
+' >> config/config.json
+else 
+echo '    "streamSettings": {
+      "tcpSettings": {
+        "header": { 
+          "type": "http",
+          "request": {
+            "version": "1.1",
+            "method": "'$method'",
+            "path": "'$path'",
+            "headers": {
+              "Host": "'$host'"
+            }
+          }
+        }
+      }
+    }
+  }]
+}
+' >> config/config.json
+fi
+}
+
+startServer() {
+  # 启动程序
+  [ "$dns" = '0' ] && pdnsd -c bin/pdnsd.conf
+  [ "$dns" = '1' ] && CProxy restart bin/CProxy.conf
+  v2ray -config config/config.json >/dev/null 2>&1 &
+}
+
+clearFile() {
+  rm -f config/*.bak bin/*.bak config/config.json bin/*.conf
+}
+
+statusCheck() {
+  ip addr|grep global|grep -E '[1-9]{1,3}[0-9]{0,2}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | \
+  while read line
+  do
+    [ -z "$line" ]&&break
+    typeset -L17 netcard=${line##* }
+    IP=${line%%/*}
+    echo "$netcard${IP##* }"
+  done
+  echo
+  [ -n "$IP" ]&&echo
+  echo -n "✺ 核心程序： "
+  busybox pgrep -x "v2ray" >/dev/null && echo -n "✔v2ray  " || echo -n "✘v2ray  "
+  busybox pgrep -x "pdnsd" >/dev/null && echo -n "✔pdnsd"
+  busybox pgrep -x "CProxy" >/dev/null && echo -n "✔CProxy"
+
+  echo -e "\n"
+  echo ✺ nat表 OUTPUT链：
+  iptables -t nat -S OUTPUT
+  echo ""
+  echo ✺ nat表 PREROUTING链：
+  iptables -t nat -S PREROUTING
+  if [ "$mudp" = "1" ];then
+    echo ""
+    echo ✺ mangle表 PREROUTING链：
+    iptables -t mangle -S PREROUTING
+    echo ""
+    echo ✺ mangle表 OUTPUT链：
+    iptables -t mangle -S OUTPUT
+  fi
+}
+
+main() {
+  if [ "$1" = "stop" ]; then
+    stopServer 2>&-
+  elif [ -z "$1" -o "$1" = "start" ]; then
+    stopServer 2>&-
+    getIp
+    makeConfig
+    iptablesAndIp 2>&-
+    startServer
+    dataControl n
+    dataControl y
+    sleep 0.15
+  fi
+  sleep 0.05
+  statusCheck
+  clearFile
+}
+
+main $1

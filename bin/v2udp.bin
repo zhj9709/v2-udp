@@ -11,10 +11,12 @@ export PATH=$DIR:$PATH
 
 stopServer() {
   # 关闭程序
-  busybox killall v2ray pdnsd CProxy 2>&-
+  busybox killall v2ray pdnsd clnc tun2socks 2>&-
   # 清除规则
   ip rule del fwmark 0x6688 table 121
   ip route del local 0.0.0.0/0 dev lo table 121
+  ip tuntap del mode tun v2tun
+  ip rule | sed -n '/0x1112/{s|.*from|ip rule del from |g;p}' | sh
   iptables -t nat -F OUTPUT
   iptables -t nat -F PREROUTING
   iptables -t mangle -F OUTPUT
@@ -42,11 +44,34 @@ getIp() {
   fi
 }
 
+getIp2()
+{
+  ip=${addr%:*}
+  if [[ $(echo $ip | grep -E '[a-z\|A-Z]') != "" ]]; then
+    isip=$(busybox ping -c1 -w1 -W1 $ip | busybox grep 'PING' | busybox cut -d'(' -f2 |  busybox cut -d')' -f1)
+    checkip=$(echo "$isip" | busybox grep '\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\}')
+    if [ "$isip" != "" -a "$isip" = "$checkip" ];then
+      ip=$isip
+    else
+      echo "ping解析IP失败！($isip)\n"
+      exit 2
+    fi
+  fi
+}
+
 forward() {
   echo 1 > /proc/sys/net/ipv4/ip_forward
   echo 2 > /proc/sys/net/ipv4/conf/default/rp_filter
   echo 2 > /proc/sys/net/ipv4/conf/all/rp_filter
   echo 1 > /proc/sys/net/ipv4/conf/all/send_redirects
+}
+
+v2tunStart(){
+  [ ! -e "/dev/net/tun" ] && mkdir -p /dev/net && ln -s /dev/tun /dev/net/tun && echo 1 > /proc/sys/net/ipv4/ip_forward
+  ip tuntap add mode tun v2tun >/dev/null 2>&1
+  ip addr add 10.0.0.9 dev v2tun >/dev/null 2>&1
+  ip link set v2tun up >/dev/null 2>&1
+  nohup tun2socks --tundev v2tun --netif-ipaddr 10.0.0.10 --netif-netmask 255.255.255.0 --socks-server-addr 127.0.0.1:1260 --enable-udprelay --loglevel 1 >/dev/null 2>&1 &
 }
 
 iptablesAndIp() {
@@ -73,23 +98,32 @@ iptablesAndIp() {
   [ "$mudp" = '1' ] && iptables -t nat -A PREROUTING ! -p udp -j REDIRECT --to-ports 1250
 
   # 免udp规则
-  if [[ "$mudp" == "1" ]];then
-    ip rule add fwmark 0x6688 table 121
-    ip route add local 0.0.0.0/0 dev lo table 121
+  if [ "$mudp" == '1' ]; then
     # PREROUTING
     iptables -t mangle -A PREROUTING ! -p udp -j ACCEPT
     for allowIp in 127/8 192.168/16 10/8 224/3 0/8 172.16/12 100.64/10 169.254/16
     do
       iptables -t mangle -A PREROUTING -d $allowIp -j ACCEPT
     done
-    iptables -t mangle -A PREROUTING ! -i tun+ -p udp -j TPROXY --on-port 1230 --tproxy-mark 0x6688
     # OUTPUT
     iptables -t mangle -A OUTPUT -o wlan+ -j ACCEPT
     iptables -t mangle -A OUTPUT -o tun+ -j ACCEPT
-    iptables -t mangle -A OUTPUT ! -d 192.168/16 ! -o lo -p udp -j MARK --set-mark 0x6688
+    iptables -t mangle -A OUTPUT -p udp --dport 53 -j ACCEPT
+    if [ "$useTun" == '1' ]; then
+      v2tunStart
+      sleep 0.1
+      #添加路由
+      ip route replace default dev v2tun table 1112
+      ip rule add from all fwmark 0x1112 lookup 1112
+      iptables -t mangle -A PREROUTING ! -i tun+ -p udp -j MARK --set-mark 0x1112
+      iptables -t mangle -A OUTPUT ! -d 192.168/16 ! -o lo -p udp -j MARK --set-mark 0x1112
+    else
+      ip rule add fwmark 0x6688 table 121
+      ip route add local 0.0.0.0/0 dev lo table 121
+      iptables -t mangle -A PREROUTING ! -i tun+ -p udp -j TPROXY --on-port 1230 --tproxy-mark 0x6688
+      iptables -t mangle -A OUTPUT ! -d 192.168/16 ! -o lo -p udp -j MARK --set-mark 0x6688
+    fi
   fi
-  # 禁止INVALID包
-  iptables -t mangle -A OUTPUT -m state --state INVALID -j DROP
   sleep 0.02
 }
 
@@ -128,26 +162,46 @@ if [[ "$dns" == '0' ]]; then
 elif [[ "$dns" == '1' ]]; then
 [ "$cacheDIR" = "/dev/null" ] && \
 cacheFile="/dev/null" || \
-cacheFile="$cacheDIR"/cp.dnsCache
-  echo "
-    global {dns_listen = 1240;}
-    httpdns {
-        addr = $CProxyDNS:53;
-        cachePath = $cacheFile;
-        cacheLimit = 256;
-        mode = tcpdns;
-    }
-  " > bin/CProxy.conf
+cacheFile="$cacheDIR"/clnc.dnsCache
+  echo 'dns::dns {
+    dns_listen = 0.0.0.0:1240;
+    destAddr = '$clncDNS':53;
+    lookup_mode = tcpdns;
+    cacheLimit = 512;
+    cachePath = '$cacheDIR';
+}
+  ' > bin/clnc.conf
 fi
 echo '{
-  "inbounds": [{
-    "port": 1230,
-    "protocol": "dokodemo-door",
-    "settings": {
-      "network": "tcp,udp",
-      "followRedirect": true
+  "inbounds": [
+    {
+      "listen": "127.0.0.1",
+      "port": 1260,
+      "protocol": "socks",
+      "settings": {
+        "auth": "noauth",
+        "udp": true,
+        "userLevel": 8
+      },
+      "sniffing": {
+        "destOverride": [
+          "http",
+          "tls"
+        ],
+        "enabled": true
+      },
+      "tag": "socks"
+    },
+    {
+      "port": 1230,
+      "protocol": "dokodemo-door",
+      "settings": {
+        "network": "tcp,udp",
+        "followRedirect": true,
+        "timeout": 600
+      }
     }
-  }],
+  ],
   "outbounds": [{
     "protocol": "vmess",
     "settings": {
@@ -199,7 +253,7 @@ fi
 startServer() {
   # 启动程序
   [ "$dns" = '0' ] && pdnsd -c bin/pdnsd.conf
-  [ "$dns" = '1' ] && CProxy restart bin/CProxy.conf
+  [ "$dns" = '1' ] && clnc -c bin/clnc.conf
   v2ray -config config/config.json >/dev/null 2>&1 &
 }
 
@@ -220,8 +274,9 @@ statusCheck() {
   [ -n "$IP" ]&&echo
   echo -n "✺ 核心程序： "
   busybox pgrep -x "v2ray" >/dev/null && echo -n "✔v2ray  " || echo -n "✘v2ray  "
-  busybox pgrep -x "pdnsd" >/dev/null && echo -n "✔pdnsd"
-  busybox pgrep -x "CProxy" >/dev/null && echo -n "✔CProxy"
+  busybox pgrep -x "tun2socks" >/dev/null && echo -n "✔tun2socks  "
+  busybox pgrep -x "pdnsd" >/dev/null && echo -n "✔pdnsd  "
+  busybox pgrep -x "clnc" >/dev/null && echo -n "✔clnc"
 
   echo -e "\n"
   echo ✺ nat表 OUTPUT链：
@@ -244,7 +299,7 @@ main() {
     stopServer 2>&-
   elif [ -z "$1" -o "$1" = "start" ]; then
     stopServer 2>&-
-    getIp
+    getIp2
     makeConfig
     iptablesAndIp 2>&-
     startServer

@@ -1,1 +1,3 @@
-${0%/*}/bin/v2udp.bin check
+cd ${0%/*}
+. ./config.ini
+./bin/"$exec".bin check

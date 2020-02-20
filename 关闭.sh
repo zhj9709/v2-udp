@@ -1,1 +1,3 @@
-${0%/*}/bin/v2udp.bin stop
+cd ${0%/*}
+. ./config.ini
+./bin/"$exec".bin stop

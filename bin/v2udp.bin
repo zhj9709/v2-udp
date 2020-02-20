@@ -80,7 +80,7 @@ iptablesAndIp() {
   # 防止WiFi共享获取不到ip
   iptables -t nat -A VNO -d 192.168/16 -j ACCEPT
   [ "$allowTcpPorts" != "" ] && iptables -t nat -A VNO -p tcp -m multiport --dports $allowTcpPorts -j ACCEPT
-  [ "$allowUdpPorts" != "" ] && iptables -t nat -A VNO -p tcp -m multiport --dports $allowUdpPorts -j ACCEPT
+  [ "$allowUdpPorts" != "" ] && iptables -t nat -A VNO -p udp -m multiport --dports $allowUdpPorts -j ACCEPT
   #本地TCP放行
   for app in $allowAppsTCP; do
     uid=`getPackageUid $app` || continue

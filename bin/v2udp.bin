@@ -180,7 +180,7 @@ getIpWget() {
 
 getIpPing() {
   if [[ $(echo $ip | grep -E '[a-z\|A-Z]') != "" && "$flag" == "1" ]]; then
-    isip=$(busybox ping -c1 -w1 -W1 $ip | busybox grep 'PING' | busybox cut -d'(' -f2 |  busybox cut -d')' -f1)
+    isip=$(ping -c1 -w1 -W1 $ip | grep 'PING' | busybox cut -d'(' -f2 |  busybox cut -d')' -f1)
     checkip=$(echo "$isip" | busybox grep '\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\}')
     if [ "$isip" != "" -a "$isip" = "$checkip" ];then
       ip=$isip
@@ -194,10 +194,10 @@ getIpPing() {
 }
 
 getIp() {
-  ip=${addr%:*} && flag=1
+  ip=${addr%:*}
+  echo "$ip" | grep -q '\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\}' && return 1 || flag=1
   getIpWget
   getIpPing
-  [ "$ip" = "${addr%:*}" ] && flag=0
   [ "$flag" = "1" ] && echo $jxjg && exit 1
 }
 

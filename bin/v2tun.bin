@@ -17,28 +17,27 @@ fi
 export PATH=$DIR:$PATH
 
 stopServer() {
-  #清除iptables规则
-  iptables -t nat -D OUTPUT -j VNO
-  iptables -t nat -D PREROUTING -j VNP
   iptables -t mangle -D OUTPUT -j VMO
+  iptables -t nat -D OUTPUT -j VNO
   iptables -t mangle -D PREROUTING -j VMP
-  iptables -F FORWARD
+  iptables -t nat -D PREROUTING -j VNP
+  iptables -D FORWARD -j VFF
+  iptables -t mangle -F VMO
+  iptables -t mangle -X VMO
   iptables -t nat -F VNO
   iptables -t nat -X VNO
   iptables -t nat -F VNP
   iptables -t nat -X VNP
-  iptables -t mangle -F VMO
-  iptables -t mangle -X VMO
   iptables -t mangle -F VMP
   iptables -t mangle -X VMP
+  iptables -F VFF
+  iptables -X VFF
   # 关闭程序
-  busybox killall tun2socks v2ray pdnsd clnc 2>&-
-  # 清除ip规则
-  ip rule del fwmark 0x1234 table 121
-  ip route del local 0.0.0.0/0 dev lo table 121
+  busybox killall tun2socks pdnsd v2ray 2>&-
+  # 清除规则
   ip tuntap del mode tun $TunDev
   ip rule | sed -n '/0x1234/{s|.*from|ip rule del from |g;p}' | sh
-  # IPV6禁网设置
+  #ipv6禁网设置
   if [ "$denyIpv6" == '1' ]; then
     ip6tables -t mangle -P OUTPUT DROP
     ip6tables -t mangle -P FORWARD DROP
@@ -71,95 +70,68 @@ getPackageUid() {
 }
 
 iptablesAndIp() {
+  #添加路由
+  ip route replace default dev $TunDev table 1234
+  ip rule add from all fwmark 0x1234 lookup 1234
   # 防跳
-  iptables -t nat -N VNO
-  iptables -t nat -A VNO -d $ip -p tcp --dport ${addr#*:} -m owner --uid-owner 3004 -j ACCEPT
-  [ "$allowWifi" = "1" ] && iptables -t nat -A VNO -o wlan+ -j ACCEPT
-  iptables -t nat -A VNO -o tun+ -j ACCEPT
-  iptables -t nat -A VNO -o lo -j ACCEPT
-  # 防止WiFi共享获取不到ip
-  iptables -t nat -A VNO -d 192.168/16 -j ACCEPT
-  [ "$allowTcpPorts" != "" ] && iptables -t nat -A VNO -p tcp -m multiport --dports $allowTcpPorts -j ACCEPT
-  [ "$allowUdpPorts" != "" -a "$mudp" = "0" ] && iptables -t nat -A VNO -p udp -m multiport --dports $allowUdpPorts -j ACCEPT
-  # 本地TCP放行
+  allow_ip="127/8,10/8,100.64/10,192.168/16,172.16/12,0/8,255/8,169.254/16"
+
+  iptables -t mangle -N VMO
+  sleep 0.01
+  iptables -t mangle -A VMO -d $ip -m owner --uid-owner 3004 -j ACCEPT
+  iptables -t mangle -A VMO -o lo -j ACCEPT
+  iptables -t mangle -A VMO -o tun+ -j ACCEPT
+  [ "$allowWifi" = "1" ] && iptables -t mangle -A VMO -o wlan+ -j ACCEPT
+  iptables -t mangle -A VMO -d 192.168/16 -j ACCEPT
+  iptables -t mangle -A VMO -p udp --dport 53 -j ACCEPT
+  [ "$allowTcpPorts" != "" ] && iptables -t mangle -A VMO -p tcp -m multiport --dports $allowTcpPorts -j ACCEPT
+  [ "$allowUdpPorts" != "" -a "$mudp" = "0" ] && iptables -t mangle -A VMO -p udp -m multiport --dports $allowUdpPorts -j ACCEPT
+  #本地TCP放行
   for app in $allowAppsTCP; do
     uid=`getPackageUid $app` || continue
-    iptables -t nat -A VNO -p tcp -m owner --uid ${uid%_*} `echo $uid|grep -q '_' && echo "-m multiport --dport ${uid#*_}"` -j ACCEPT
+    iptables -t mangle -A VMO -p tcp -m owner --uid ${uid%_*} `echo $uid|grep -q '_' && echo "-m multiport --dport ${uid#*_}"` -j ACCEPT
   done
-  if [ "$mudp" = "0" ]; then
-    # 本地UDP放行
-    for app in $allowAppsUDP; do
-      uid=`getPackageUid $app` || continue
-      iptables -t nat -A VNO -p udp -m owner --uid ${uid%_*} `echo $uid|grep -q '_' && echo "-m multiport --dport ${uid#*_}"` -j ACCEPT
-    done
-  fi
-  # 本地全局放行
+  #本地UDP放行
+  for app in $allowAppsUDP; do
+    uid=`getPackageUid $app` || continue
+    iptables -t mangle -A VMO -p udp -m owner --uid ${uid%_*} `echo $uid|grep -q '_' && echo "-m multiport --dport ${uid#*_}"` -j ACCEPT
+  done
+  #本地全局放行
   for app in $allowApps; do
     uid=`getPackageUid $app` || continue
-    iptables -t nat -A VNO -m owner --uid $uid -j ACCEPT
+    iptables -t mangle -A VMO -m owner --uid $uid -j ACCEPT
   done
-  iptables -t nat -A VNO -p tcp -j REDIRECT --to-ports 1230
+  [ "$mudp" = "0" ] && iptables -t mangle -A VMO -p udp -j DROP
+  [ "$mudp" = "2" ] && iptables -t mangle -A VMO -p udp -j ACCEPT
+  iptables -t mangle -A VMO -j MARK --set-mark 0x1234
+  iptables -t mangle -I OUTPUT -j VMO
+  
+  iptables -t nat -N VNO
+  iptables -t nat -A VNO -m owner --uid-owner 3004 -j ACCEPT
+  iptables -t nat -A VNO -o lo -j ACCEPT
+  iptables -t nat -A VNO -o tun+ -j ACCEPT
+  [ "$allowWifi" = "1" ] && iptables -t nat -A VNO -o wlan+ -j ACCEPT
   iptables -t nat -A VNO -p udp --dport 53 -j REDIRECT --to-ports 1240
-  [ "$mudp" = '0' ] && iptables -t nat -A VNO ! -p tcp -j REDIRECT --to-ports 1250
-  [ "$mudp" = '1' ] && iptables -t nat -A VNO ! -p udp -j REDIRECT --to-ports 1250
   iptables -t nat -I OUTPUT -j VNO
-
-  # 共享规则
+  
+  iptables -t mangle -N VMP
+  [ "$allowShareTcpPorts" != "" ] && iptables -t mangle -A VMP -p tcp -m multiport --dports $allowShareTcpPorts -j ACCEPT
+  [ "$allowShareUdpPorts" != "" ] && iptables -t mangle -A VMP -p udp -m multiport --dports $allowShareUdpPorts -j ACCEPT
+  iptables -t mangle -A VMP -d $allow_ip -j ACCEPT
+  iptables -t mangle -A VMP -p udp --dport 53 -j ACCEPT
+  [ "$mudp" = "0" ] && iptables -t mangle -A VMP -p udp -j DROP
+  [ "$mudp" = "2" ] && iptables -t mangle -A VMP -p udp -j ACCEPT
+  iptables -t mangle -A VMP -s 192.168/16 -j MARK --set-mark 0x1234
+  iptables -t mangle -I PREROUTING -j VMP
+  
   iptables -t nat -N VNP
-  [ "$allowShareTcpPorts" != "" ] && iptables -t nat -A VNP -p tcp -m multiport --dports $allowShareTcpPorts -j ACCEPT
-  [ "$allowShareUdpPorts" != "" ] && iptables -t nat -A VNP -p udp -m multiport --dports $allowShareUdpPorts -j ACCEPT
-  iptables -t nat -A VNP -s 192.168/16 ! -d 192.168/16 -p tcp -j REDIRECT --to-ports 1230
   iptables -t nat -A VNP -s 192.168/16 -p udp --dport 53 -j REDIRECT --to-ports 1240
-  #[ "$mudp" = '1' ] || iptables -t nat -A VNP -s 192.168/16 -p udp --dport 53 -j REDIRECT --to-ports 53
-  [ "$mudp" = '0' ] && iptables -t nat -A VNP ! -p tcp -j REDIRECT --to-ports 1250
-  [ "$mudp" = '1' ] && iptables -t nat -A VNP ! -p udp -j REDIRECT --to-ports 1250
   iptables -t nat -I PREROUTING -j VNP
 
-  # 免udp规则
-  if [ "$mudp" == '1' ]; then
-    # PREROUTING
-    iptables -t mangle -N VMP
-    [ "$allowShareUdpPorts" != "" ] && iptables -t mangle -A VMP -p udp -m multiport --dports $allowShareUdpPorts -j ACCEPT
-    for allowIp in 127/8 192.168/16 10/8 224/3 0/8 172.16/12 100.64/10 169.254/16
-    do
-      iptables -t mangle -A VMP -d $allowIp -j ACCEPT
-    done
-
-    # OUTPUT
-    iptables -t mangle -N VMO
-    [ "$allowUdpPorts" != "" ] && iptables -t mangle -A VMO -p udp -m multiport --dports $allowUdpPorts -j ACCEPT
-    # 本地UDP放行
-    for app in $allowAppsUDP; do
-      uid=`getPackageUid $app` || continue
-      iptables -t mangle -A VMO -p udp -m owner --uid ${uid%_*} `echo $uid|grep -q '_' && echo "-m multiport --dport ${uid#*_}"` -j ACCEPT
-    done
-    # 本地全局放行
-    for app in $allowApps; do
-      uid=`getPackageUid $app` || continue
-      iptables -t mangle -A VMO -m owner --uid $uid -j ACCEPT
-    done
-    [ "$allowWifi" = "1" ] && iptables -t mangle -A VMO -o wlan+ -j ACCEPT
-    iptables -t mangle -A VMO -o tun+ -j ACCEPT
-    if [ "$useTun" == '1' ]; then
-    # tun2socks/TPROXY 选择
-      v2tunStart
-      sleep 0.1
-      ip route replace default dev $TunDev table 1234
-      ip rule add from all fwmark 0x1234 lookup 1234
-      iptables -t mangle -A VMP ! -i tun+ -p udp ! --dport 53 -j MARK --set-mark 0x1234
-      iptables -t mangle -A VMO ! -d 192.168/16 ! -o lo -p udp ! --dport 53 -j MARK --set-mark 0x1234
-
-      iptables -A FORWARD -i $TunDev
-      iptables -A FORWARD -o $TunDev
-    else
-      ip rule add fwmark 0x1234 table 121
-      ip route add local 0.0.0.0/0 dev lo table 121
-      iptables -t mangle -A VMP ! -i tun+ -p udp ! --dport 53 -j TPROXY --on-port 1230 --tproxy-mark 0x1234
-      iptables -t mangle -A VMO ! -d 192.168/16 ! -o lo -p udp ! --dport 53 -j MARK --set-mark 0x1234
-    fi
-    iptables -t mangle -A OUTPUT -j VMO
-    iptables -t mangle -A PREROUTING -j VMP
-  fi
+  iptables -N VFF
+  iptables -A VFF -i $TunDev -j ACCEPT
+  iptables -A VFF -o $TunDev -j ACCEPT
+  iptables -I FORWARD -j VFF
 }
 
 getIpWget() {
@@ -250,15 +222,6 @@ echo '{
         "enabled": true
       },
       "tag": "socks"
-    },
-    {
-      "port": 1230,
-      "protocol": "dokodemo-door",
-      "settings": {
-        "network": "tcp,udp",
-        "followRedirect": true,
-        "timeout": 600
-      }
     }
   ],
   "outbounds": [{
@@ -334,26 +297,20 @@ statusCheck() {
   echo -n "✺ 核心程序： "
   busybox pidof "v2ray" >/dev/null && echo -n "✔v2ray  " || echo -n "✘v2ray  "
   busybox pidof "pdnsd" >/dev/null && echo -n "✔pdnsd  " || echo -n "✘pdnsd  "
-  if [ "$useTun" = "1" -a "$mudp" = "1" ]; then
-    busybox pidof "tun2socks" >/dev/null && echo -n "✔tun2socks  " || echo -n "✘tun2socks  "
-  else
-    busybox pidof "tun2socks" >/dev/null && echo -n "✔tun2socks  "
-  fi
+  busybox pidof "tun2socks" >/dev/null && echo -n "✔tun2socks  " || echo -n "✘tun2socks  "
 
-  echo -e "\n"
-  echo ✺ nat表 VNO链：
+  echo -e '\n'
+  echo ✺ mangle表 VMO链:
+  iptables -t mangle -S VMO
+  echo ""
+  echo ✺ nat表 VNO链:
   iptables -t nat -S VNO
   echo ""
-  echo ✺ nat表 VNP链：
+  echo ✺ mangle表 VMP链:
+  iptables -t mangle -S | grep -q 'PREROUTING -j VMP' && iptables -t mangle -S VMP
+  echo ""
+  echo ✺ nat表 VNP链:
   iptables -t nat -S | grep -q 'PREROUTING -j VNP' && iptables -t nat -S VNP
-  if [ "$mudp" = "1" ]; then
-    echo ""
-    echo ✺ mangle表 VMP链：
-    iptables -t mangle -S | grep -q 'PREROUTING -j VMP' && iptables -t mangle -S VMP
-    echo ""
-    echo ✺ mangle表 VMO链：
-    iptables -t mangle -S VMO
-  fi
 }
 
 main() {
@@ -363,6 +320,7 @@ main() {
     stopServer 2>&-
     getIp
     makeConfig
+    v2tunStart
     iptablesAndIp 2>&-
     startServer
     dataControl n

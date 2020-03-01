@@ -51,9 +51,9 @@ stopServer() {
 v2tunStart(){
   [ ! -e "/dev/net/tun" ] && mkdir -p /dev/net && ln -s /dev/tun /dev/net/tun && echo 1 > /proc/sys/net/ipv4/ip_forward
   ip tuntap add mode tun $TunDev >/dev/null 2>&1
-  ip addr add 10.0.0.9 dev $TunDev >/dev/null 2>&1
+  ip addr add 10.0.0.1/24 dev $TunDev >/dev/null 2>&1
   ip link set $TunDev up >/dev/null 2>&1
-  nohup tun2socks --tundev $TunDev --netif-ipaddr 10.0.0.10 --netif-netmask 255.255.255.0 --socks-server-addr 127.0.0.1:1260 --enable-udprelay --loglevel 1 >/dev/null 2>&1 &
+  nohup tun2socks --tundev $TunDev --netif-ipaddr 10.0.0.2 --netif-netmask 255.255.255.0 --socks-server-addr 127.0.0.1:1260 --enable-udprelay --loglevel 1 >/dev/null 2>&1 &
 }
 
 #通过包名得到uid

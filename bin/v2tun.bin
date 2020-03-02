@@ -188,12 +188,15 @@ dataControl() {
 }
 
 makeConfig() {
-echo 'dns::dns {
+echo 'dns::Global {
     dns_listen = 0.0.0.0:1240;
-    destAddr = '$DNS':53;
-    lookup_mode = tcpdns;
     cacheLimit = 512;
     cachePath = /dev/null;
+}
+
+dnsAcl {
+    destaddr = '$DNS':53;
+    lookup_mode = tcpdns;
 }' > bin/clnc.conf
 
 echo '{

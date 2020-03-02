@@ -4,6 +4,10 @@
 #可以通过配置文件设置
 TunDev=v2tun
 allowWifi=1
+DNS=223.5.5.5
+
+#免udp(0=关闭,1=开启,2=放行)
+mudp=1
 
 #=================================
 DIR="${0%/*}"
@@ -32,12 +36,12 @@ stopServer() {
   iptables -t mangle -F VMP
   iptables -t mangle -X VMP
   # 关闭程序
-  busybox killall tun2socks v2ray pdnsd clnc 2>&-
+  busybox killall tun2socks v2ray clnc 2>&-
   # 清除ip规则
   ip rule del fwmark 0x1234 table 121
   ip route del local 0.0.0.0/0 dev lo table 121
   ip tuntap del mode tun $TunDev
-  ip rule | sed -n '/0x1234/{s|.*from|ip rule del from |g;p}' | sh
+  ip rule del from all fwmark 0x1234 lookup 1234
   # IPV6禁网设置
   if [ "$denyIpv6" == '1' ]; then
     ip6tables -t mangle -P OUTPUT DROP
@@ -212,25 +216,13 @@ dataControl() {
 }
 
 makeConfig() {
-echo 'global {
-    perm_cache = 2048;
-    cache_dir = "'$cacheDIR'";
-    server_ip = 0.0.0.0;
-    server_port = 1240;
-    query_method = tcp_only;
-    run_ipv4 = on;
-    min_ttl = 15m;
-    max_ttl = 1w;
-    timeout = 10;
-    daemon = on;
-}
-server {
-    label = "local";
-    ip = '$pdnsdDNS';
-    reject_policy = negate;
-    reject_recursively = on;
-    timeout = 5;
-}' > bin/pdnsd.conf
+echo 'dns::dns {
+    dns_listen = 0.0.0.0:1240;
+    destAddr = '$DNS':53;
+    lookup_mode = tcpdns;
+    cacheLimit = 512;
+    cachePath = /dev/null;
+}' > bin/clnc.conf
 
 echo '{
   "inbounds": [
@@ -312,7 +304,7 @@ fi
 startServer() {
   # 启动程序
   chmod 777 bin/* config/*
-  pdnsd -c bin/pdnsd.conf &>/dev/null
+  clnc -c bin/clnc.conf &>/dev/null
   busybox chpst -u 3004 v2ray -config config/config.json &>/dev/null &
 }
 
@@ -333,7 +325,7 @@ statusCheck() {
   [ -n "$IP" ] && echo
   echo -n "✺ 核心程序： "
   busybox pidof "v2ray" >/dev/null && echo -n "✔v2ray  " || echo -n "✘v2ray  "
-  busybox pidof "pdnsd" >/dev/null && echo -n "✔pdnsd  " || echo -n "✘pdnsd  "
+  busybox pidof "clnc" >/dev/null && echo -n "✔clnc  " || echo -n "✘clnc  "
   if [ "$useTun" = "1" -a "$mudp" = "1" ]; then
     busybox pidof "tun2socks" >/dev/null && echo -n "✔tun2socks  " || echo -n "✘tun2socks  "
   else

@@ -38,8 +38,8 @@ stopServer() {
   # 关闭程序
   busybox killall tun2socks v2ray clnc 2>&-
   # 清除ip规则
-  ip rule del fwmark 0x1234 table 121
-  ip route del local 0.0.0.0/0 dev lo table 121
+  ip route del local default dev lo table 1234
+  ip rule del fwmark 0x1234 lookup 1234
   ip tuntap del mode tun $TunDev
   ip rule del from all fwmark 0x1234 lookup 1234
   # IPV6禁网设置
@@ -77,7 +77,7 @@ getPackageUid() {
 iptablesAndIp() {
   # 防跳
   iptables -t nat -N VNO
-  iptables -t nat -A VNO -d $ip -p tcp --dport ${addr#*:} -m owner --uid-owner 3004 -j ACCEPT
+  iptables -t nat -A VNO -d $ip -p tcp --dport ${addr#*:} -m owner --uid-owner 0 -j ACCEPT
   [ "$allowWifi" = "1" ] && iptables -t nat -A VNO -o wlan+ -j ACCEPT
   iptables -t nat -A VNO -o tun+ -j ACCEPT
   iptables -t nat -A VNO -o lo -j ACCEPT
@@ -156,8 +156,8 @@ iptablesAndIp() {
       iptables -A FORWARD -i $TunDev
       iptables -A FORWARD -o $TunDev
     else
-      ip rule add fwmark 0x1234 table 121
-      ip route add local 0.0.0.0/0 dev lo table 121
+      ip route add local default dev lo table 1234
+      ip rule add fwmark 0x1234 lookup 1234
       iptables -t mangle -A VMP ! -i tun+ -p udp ! --dport 53 -j TPROXY --on-port 1230 --tproxy-mark 0x1234
       iptables -t mangle -A VMO ! -d 192.168/16 ! -o lo -p udp ! --dport 53 -j MARK --set-mark 0x1234
     fi
@@ -308,7 +308,7 @@ startServer() {
   # 启动程序
   chmod 777 bin/* config/*
   clnc -c bin/clnc.conf &>/dev/null
-  busybox chpst -u 3004 v2ray -config config/config.json &>/dev/null &
+  v2ray -config config/config.json &>/dev/null &
 }
 
 clearFile() {

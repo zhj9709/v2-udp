@@ -36,7 +36,7 @@ stopServer() {
   iptables -t mangle -F VMP
   iptables -t mangle -X VMP
   # 关闭程序
-  busybox killall tun2socks v2ray clnc 2>&-
+  busybox killall go-tun2socks v2ray clnc 2>&-
   # 清除ip规则
   ip route del local default dev lo table 1234
   ip rule del fwmark 0x1234 lookup 1234
@@ -57,7 +57,7 @@ v2tunStart(){
   ip tuntap add mode tun $TunDev >/dev/null 2>&1
   ip addr add 10.0.0.1/24 dev $TunDev >/dev/null 2>&1
   ip link set $TunDev up >/dev/null 2>&1
-  nohup tun2socks --tundev $TunDev --netif-ipaddr 10.0.0.2 --netif-netmask 255.255.255.0 --socks-server-addr 127.0.0.1:1260 --enable-udprelay --loglevel 1 >/dev/null 2>&1 &
+  nohup go-tun2socks -tunGw 10.0.0.2 -proxyServer 127.0.0.1:1260 -tunName $TunDev &>/dev/null &
 }
 
 #通过包名得到uid
@@ -102,6 +102,7 @@ iptablesAndIp() {
     uid=`getPackageUid $app` || continue
     iptables -t nat -A VNO -m owner --uid $uid -j ACCEPT
   done
+
   iptables -t nat -A VNO -p tcp -j REDIRECT --to-ports 1230
   iptables -t nat -A VNO -p udp --dport 53 -j REDIRECT --to-ports 1240
   [ "$mudp" = '0' ] && iptables -t nat -A VNO ! -p tcp -j REDIRECT --to-ports 1250
@@ -114,7 +115,6 @@ iptablesAndIp() {
   [ "$allowShareUdpPorts" != "" ] && iptables -t nat -A VNP -p udp -m multiport --dports $allowShareUdpPorts -j ACCEPT
   iptables -t nat -A VNP -s 192.168/16 ! -d 192.168/16 -p tcp -j REDIRECT --to-ports 1230
   iptables -t nat -A VNP -s 192.168/16 -p udp --dport 53 -j REDIRECT --to-ports 1240
-  #[ "$mudp" = '1' ] || iptables -t nat -A VNP -s 192.168/16 -p udp --dport 53 -j REDIRECT --to-ports 53
   [ "$mudp" = '0' ] && iptables -t nat -A VNP ! -p tcp -j REDIRECT --to-ports 1250
   [ "$mudp" = '1' ] && iptables -t nat -A VNP ! -p udp -j REDIRECT --to-ports 1250
   iptables -t nat -I PREROUTING -j VNP
@@ -145,7 +145,7 @@ iptablesAndIp() {
     [ "$allowWifi" = "1" ] && iptables -t mangle -A VMO -o wlan+ -j ACCEPT
     iptables -t mangle -A VMO -o tun+ -j ACCEPT
     if [ "$useTun" == '1' ]; then
-    # tun2socks/TPROXY 选择
+    # go-tun2socks/TPROXY 选择
       v2tunStart
       sleep 0.1
       ip route replace default dev $TunDev table 1234
@@ -330,9 +330,9 @@ statusCheck() {
   busybox pidof "v2ray" >/dev/null && echo -n "✔v2ray  " || echo -n "✘v2ray  "
   busybox pidof "clnc" >/dev/null && echo -n "✔clnc  " || echo -n "✘clnc  "
   if [ "$useTun" = "1" -a "$mudp" = "1" ]; then
-    busybox pidof "tun2socks" >/dev/null && echo -n "✔tun2socks  " || echo -n "✘tun2socks  "
+    busybox pidof "go-tun2socks" >/dev/null && echo -n "✔go-tun2socks  " || echo -n "✘go-tun2socks  "
   else
-    busybox pidof "tun2socks" >/dev/null && echo -n "✔tun2socks  "
+    busybox pidof "go-tun2socks" >/dev/null && echo -n "✔go-tun2socks  "
   fi
 
   echo -e "\n"

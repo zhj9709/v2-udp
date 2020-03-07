@@ -296,10 +296,10 @@ statusCheck() {
 
   echo -e '\n'
   echo ✺ mangle表 VMO链:
-  iptables -t mangle -S VMO
+  iptables -t mangle -S VMO 2>&-
   echo ""
   echo ✺ nat表 VNO链:
-  iptables -t nat -S VNO
+  iptables -t nat -S VNO 2>&-
   echo ""
   echo ✺ mangle表 VMP链:
   iptables -t mangle -S | grep -q 'PREROUTING -j VMP' && iptables -t mangle -S VMP

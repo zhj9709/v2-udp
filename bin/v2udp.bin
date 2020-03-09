@@ -2,7 +2,6 @@
 
 #全局变量(默认参数)
 #可以通过配置文件设置
-DNS=223.5.5.5
 TunDev=v2tun
 allowWifi=1
 
@@ -104,7 +103,7 @@ iptablesAndIp() {
   done
 
   iptables -t nat -A VNO -p tcp -j REDIRECT --to-ports 1230
-  iptables -t nat -A VNO -p udp --dport 53 -j REDIRECT --to-ports 1240
+  [ "$DNS" = "" ] || iptables -t nat -A VNO -p udp --dport 53 -j REDIRECT --to-ports 1240
   [ "$mudp" = '0' ] && iptables -t nat -A VNO ! -p tcp -j REDIRECT --to-ports 1250
   [ "$mudp" = '1' ] && iptables -t nat -A VNO ! -p udp -j REDIRECT --to-ports 1250
   iptables -t nat -I OUTPUT -j VNO
@@ -114,7 +113,7 @@ iptablesAndIp() {
   [ "$allowShareTcpPorts" != "" ] && iptables -t nat -A VNP -p tcp -m multiport --dports $allowShareTcpPorts -j ACCEPT
   [ "$allowShareUdpPorts" != "" ] && iptables -t nat -A VNP -p udp -m multiport --dports $allowShareUdpPorts -j ACCEPT
   iptables -t nat -A VNP -s 192.168/16 ! -d 192.168/16 -p tcp -j REDIRECT --to-ports 1230
-  iptables -t nat -A VNP -s 192.168/16 -p udp --dport 53 -j REDIRECT --to-ports 1240
+  [ "$DNS" = "" ] || iptables -t nat -A VNP -s 192.168/16 -p udp --dport 53 -j REDIRECT --to-ports 1240
   [ "$mudp" = '0' ] && iptables -t nat -A VNP ! -p tcp -j REDIRECT --to-ports 1250
   [ "$mudp" = '1' ] && iptables -t nat -A VNP ! -p udp -j REDIRECT --to-ports 1250
   iptables -t nat -I PREROUTING -j VNP
@@ -307,7 +306,7 @@ fi
 startServer() {
   # 启动程序
   chmod 777 bin/* config/*
-  clnc -c bin/clnc.conf &>/dev/null
+  [ "$DNS" = "" ] || clnc -c bin/clnc.conf
   v2ray -config config/config.json &>/dev/null &
 }
 
@@ -328,7 +327,9 @@ statusCheck() {
   [ -n "$IP" ] && echo
   echo -n "✺ 核心程序： "
   busybox pidof "v2ray" >/dev/null && echo -n "✔v2ray  " || echo -n "✘v2ray  "
-  busybox pidof "clnc" >/dev/null && echo -n "✔clnc  " || echo -n "✘clnc  "
+  if [ "$DNS" != "" ]; then
+    busybox pidof "clnc" >/dev/null && echo -n "✔clnc  " || echo -n "✘clnc  "
+  fi
   if [ "$useTun" = "1" -a "$mudp" = "1" ]; then
     busybox pidof "tun2socks" >/dev/null && echo -n "✔tun2socks  " || echo -n "✘tun2socks  "
   else

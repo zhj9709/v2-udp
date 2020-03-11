@@ -3,10 +3,10 @@
 #全局变量(默认参数)
 #可以通过配置文件设置
 TunDev=v2tun
-allowWifi=1
-
 #免udp(0=关闭,1=开启,2=放行)
 mudp=1
+#放行除tcp,udp外的流量(1放行)
+fxqt=1
 
 #=================================
 DIR="${0%/*}"
@@ -104,8 +104,10 @@ iptablesAndIp() {
 
   iptables -t nat -A VNO -p tcp -j REDIRECT --to-ports 1230
   [ "$DNS" = "" ] || iptables -t nat -A VNO -p udp --dport 53 -j REDIRECT --to-ports 1240
-  [ "$mudp" = '0' ] && iptables -t nat -A VNO ! -p tcp -j REDIRECT --to-ports 1250
-  [ "$mudp" = '1' ] && iptables -t nat -A VNO ! -p udp -j REDIRECT --to-ports 1250
+  if [ "$mudp" = '0' ]; then
+    [ "$fxqt" != '1' ] && iptables -t nat -A VNO ! -p tcp -j REDIRECT --to-ports 1250 || iptables -t nat -A VNO -p udp -j REDIRECT --to-ports 1250
+  fi
+  [ "$mudp" = '1' -a "$fxqt" != '1' ] && iptables -t nat -A VNO ! -p udp -j REDIRECT --to-ports 1250
   iptables -t nat -I OUTPUT -j VNO
 
   # 共享规则
@@ -114,8 +116,10 @@ iptablesAndIp() {
   [ "$allowShareUdpPorts" != "" ] && iptables -t nat -A VNP -p udp -m multiport --dports $allowShareUdpPorts -j ACCEPT
   iptables -t nat -A VNP -s 192.168/16 ! -d 192.168/16 -p tcp -j REDIRECT --to-ports 1230
   [ "$DNS" = "" ] || iptables -t nat -A VNP -s 192.168/16 -p udp --dport 53 -j REDIRECT --to-ports 1240
-  [ "$mudp" = '0' ] && iptables -t nat -A VNP ! -p tcp -j REDIRECT --to-ports 1250
-  [ "$mudp" = '1' ] && iptables -t nat -A VNP ! -p udp -j REDIRECT --to-ports 1250
+  if [ "$mudp" = '0' ]; then
+    [ "$fxqt" != '1' ] && iptables -t nat -A VNP ! -p tcp -j REDIRECT --to-ports 1250 || iptables -t nat -A VNP -p udp -j REDIRECT --to-ports 1250
+  fi
+  [ "$mudp" = '1' -a "$fxqt" != '1' ] && iptables -t nat -A VNP ! -p udp -j REDIRECT --to-ports 1250
   iptables -t nat -I PREROUTING -j VNP
 
   # 免udp规则

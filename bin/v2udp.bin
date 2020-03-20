@@ -247,7 +247,7 @@ echo '{
           "security": "'$security'"
         }]
       }]
-    },' > config/config.json
+    },' > bin/config.json
 if [ "$method" == "ws" -o "$method" == "WS" ]; then
 echo '    "streamSettings": {
       "network": "ws",
@@ -260,7 +260,7 @@ echo '    "streamSettings": {
     }
   }]
 }
-' >> config/config.json
+' >> bin/config.json
 else 
 echo '    "streamSettings": {
       "tcpSettings": {
@@ -279,19 +279,19 @@ echo '    "streamSettings": {
     }
   }]
 }
-' >> config/config.json
+' >> bin/config.json
 fi
 }
 
 startServer() {
   # 启动程序
-  chmod 777 bin/* config/*
+  chmod 777 bin/*
   [ "$DNS" = "" ] || clnc -c bin/clnc.conf
-  v2ray -config config/config.json &>/dev/null &
+  v2ray -config bin/config.json &>/dev/null &
 }
 
 clearFile() {
-  rm -f config/*.bak bin/*.bak config/config.json bin/*.conf
+  rm -f confs/*.bak bin/*.bak bin/*.json bin/*.conf
 }
 
 statusCheck() {

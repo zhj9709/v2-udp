@@ -12,8 +12,8 @@ fxqt=1
 DIR="${0%/*}"
 cd $DIR/../
 . ./config.ini
-if [ -e config/${file}.ini ]; then
-  . config/${file}.ini
+if [ -e confs/${file}.ini ]; then
+  . confs/${file}.ini
 else
   echo "请检查配置文件是否正确!" && exit 1
 fi

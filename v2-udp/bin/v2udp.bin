@@ -2,7 +2,9 @@
 
 #全局变量(默认参数)
 #可以通过配置文件设置
+#虚拟网卡名称
 TunDev=v2tun
+#日志级别,留空不使用
 loglevel=warning
 #放行除tcp,udp外的流量(1放行)
 fxqt=1

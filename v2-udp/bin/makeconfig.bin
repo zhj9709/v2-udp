@@ -1,0 +1,300 @@
+#!/system/bin/sh
+
+#双服务器代理模式(gfw,cn)
+# gfw  国外服务器代理gfwlist,其他使用国内服务器
+# cn   国内服务器代理geoip:cn,geosite:cn,其他使用国外服务器
+proxy_mode="cn"
+
+get_ip() {
+  server=${addr%:*}
+  if echo $server | grep -qE '[a-z\|A-Z]'; then
+    ip=`busybox wget -qO- -T1 http://119.29.29.29/d?dn=$server | busybox cut -d';' -f1`
+    echo $ip | grep -q '\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\}' || ip=""
+    if [ -z "$ip" ]; then
+      ip=`ping -c1 -W1 $server | grep 'PING' | busybox cut -d'(' -f2 |  busybox cut -d')' -f1`
+    fi
+  else
+    ip=$server
+  fi
+  addr=$ip:${addr#*:}
+}
+
+if [ "$useTun" = "1" ]; then
+udpInbound='
+    {
+      "tag": "udp-in",
+      "port": 1232,
+      "protocol": "socks",
+      "settings": {
+        "auth": "noauth",
+        "udp": true
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http","tls"]
+      }
+    }'
+else
+udpInbound='
+    {
+      "tag": "udp-in",
+      "port": 1231,
+      "protocol": "dokodemo-door",
+      "settings": {
+        "network": "udp",
+        "followRedirect": true
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http","tls"]
+      }
+    }'
+fi
+
+getOutboundObj() {
+[ -n "$3" ] && source ./confs/$3.ini
+if echo $method | grep -q ":"; then
+  param1=${method%:*}
+  param2=${method#*:}
+else
+  param1=$method
+fi
+
+if [ "$param1" = "ws" ]; then
+[ -n "$host" ] && host="\"$host\""
+network='ws'
+wsSettingsObj='{
+          "path": "'${path:-/}'",
+          "headers": {
+            "Host": '${host:-null}'
+          }
+        }'
+  if [ -n "$param2" ]; then
+    tlssecurity="\"tls\""
+    tlsSettingsObj='{
+          "allowInsecure": true,
+          "serverName": '${host:-null}'
+        }'
+  fi
+fi
+
+if [ "$param1" = "kcp" ]; then
+[ -n "$param2" ] && kcpType="\"$param2\""
+network='kcp'
+kcpSettingsObj='{
+          "mtu": 1350,
+          "tti": 50,
+          "uplinkCapacity": 12,
+          "downlinkCapacity": 100,
+          "congestion": true,
+          "readBufferSize": 5,
+          "writeBufferSize": 5,
+          "header": {
+            "type": '${kcpType:-null}',
+            "request": null,
+            "response": null
+          }
+        }'
+fi
+
+if [ -z "$network" ]; then
+network='tcp'
+tcpSettingsObj='{
+          "header": { 
+            "type": "http",
+            "request": {
+              "version": "1.1",
+              "method": "'$method'",
+              "path": "'$path'",
+              "headers": {
+                "Host": "'$host'"
+              }
+            }
+          }
+        }'
+fi
+
+if [ "$param2" != "tls" ]; then
+  get_ip
+  [ -z "$ip" ] && return 111
+fi
+
+echo "${2}file"=$3 >> bin/info
+echo "${2}addr"=$addr >> bin/info
+if [ "$network" != "kcp" ]; then
+  echo "${2}path"=$path >> bin/info
+  echo "${2}host"=$host >> bin/info
+fi
+
+echo "
+    {
+      \"tag\": \"$1\",
+      \"protocol\": \"vmess\",
+      \"settings\": {
+        \"vnext\": [{
+          \"address\": \"${addr%:*}\",
+          \"port\": ${addr#*:},
+          \"users\": [{
+            \"id\": \"$uuid\",
+            \"alterId\": $alterId,
+            \"security\": \"$security\"
+          }]
+        }]
+      },
+      \"streamSettings\": {
+        \"network\": \"$network\",
+        \"security\": ${tlssecurity:-null},
+        \"tlsSettings\": ${tlsSettingsObj:-null},
+        \"tcpSettings\": ${tcpSettingsObj:-null},
+        \"kcpSettings\": ${kcpSettingsObj:-null},
+        \"wsSettings\": ${wsSettingsObj:-null},
+        \"httpSettings\": ${httpSettingsObj:-null}
+      }
+    },"
+}
+
+echo "" > bin/info
+outboundObj1=`getOutboundObj proxy x $file1`
+[ "$?" = "111" ] && return 111
+[ -n "$file2" ] && outboundObj2=`getOutboundObj PROXY2 y $file2`
+[ "$?" = "111" ] && return 111
+
+if [ "$proxy_mode" = "cn" ]; then
+  outboundsObj=${outboundObj2}${outboundObj1}
+else
+  outboundsObj=${outboundObj1}${outboundObj2}
+fi
+
+getDns() {
+source $1
+echo $DNS
+}
+
+getDnsObj() {
+if [ -n "$file2" ]; then
+DNS1=`getDns ./confs/${file1}.ini`
+DNS2=`getDns ./confs/${file2}.ini`
+echo "\"dns\": {
+    \"servers\": [
+      {
+        \"address\": \"$DNS1\",
+        \"port\": 53,
+        \"domains\": [
+          \"geosite:cn\"
+        ]
+      },
+      \"$DNS2\"
+    ]
+  }"
+else
+[ -n "$file1" ] && DNS=`getDns ./confs/${file1}.ini`
+echo "\"dns\": {
+    \"servers\": [
+      \"$DNS\"
+    ]
+  }"
+fi
+}
+
+getRuleObj() {
+if [ -n "$file2" ]; then
+if [ "$proxy_mode" = "cn" ]; then
+echo ",
+      {
+        \"type\": \"field\",
+        \"domain\": [\"geosite:cn\"],
+        \"outboundTag\": \"proxy\"
+      },
+      {
+        \"type\": \"field\",
+        \"outboundTag\": \"proxy\",
+        \"ip\": [
+          \"geoip:cn\",
+          \"198.11.0.0/16\",
+          \"203.19.0.0/16\",
+          \"106.11.0.0/16\"
+        ]
+      }"
+else
+echo ",
+      {
+        \"type\": \"field\",
+        \"domain\": [\"geosite:geolocation-!cn\"],
+        \"outboundTag\": \"PROXY2\"
+      }"
+fi
+fi
+}
+
+if [ "$breakBQ" = "1" ]; then
+breakBqRuleObj=',
+      {
+        "type": "field",
+        "network": "tcp",
+        "outboundTag": "direct",
+        "domain": [
+          "video.qq.com",
+          "cache.video.iqiyi.com",
+          "api.bilibili.com",
+          "api3-normal-c-hl.ixigua.com",
+          "www.ixigua.com",
+          "mobile.api.mgtv.com",
+          "pcweb2.api.mgtv.com",
+          "interface3.music.163.com",
+          "guide-acs.m.taobao.com"
+        ]
+      },
+      {
+        "type": "field",
+        "network": "tcp",
+        "outboundTag": "direct",
+        "ip": ["ext:breakbq.dat:bq"]
+      }'
+fi
+
+echo "{
+  \"log\": {
+    \"loglevel\": \"$loglevel\"
+  },
+  \"inbounds\": [
+    {
+      \"tag\": \"redir-tcp\",
+      \"port\": 1230,
+      \"protocol\": \"dokodemo-door\",
+      \"settings\": {
+        \"network\": \"tcp\",
+        \"followRedirect\": true
+      },
+      \"sniffing\": {
+        \"enabled\": true,
+        \"destOverride\": [\"http\",\"tls\"]
+      }
+    },$udpInbound
+  ],
+  \"outbounds\": [$outboundsObj
+    {
+      \"protocol\": \"freedom\",
+      \"settings\": {
+        \"domainStrategy\": \"UseIP\"
+      },
+      \"tag\": \"direct\"
+    },
+    {
+      \"protocol\": \"dns\",
+      \"tag\": \"dns-out\"
+    }
+  ],
+  `getDnsObj`,
+  \"routing\": {
+    \"domainStrategy\": \"IPIfNonMatch\",
+    \"rules\": [
+      {
+        \"type\": \"field\",
+        \"network\": \"udp\",
+        \"port\": \"53\",
+        \"inboundTag\": [\"udp-in\"],
+        \"outboundTag\": \"dns-out\"
+      }$breakBqRuleObj`getRuleObj`
+    ]
+  }
+}" > bin/config.json

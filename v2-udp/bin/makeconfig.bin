@@ -202,25 +202,20 @@ if [ "$proxy_mode" = "cn" ]; then
 echo ",
       {
         \"type\": \"field\",
-        \"domain\": [\"geosite:cn\"],
-        \"outboundTag\": \"proxy\"
+        \"outboundTag\": \"proxy\",
+        \"domain\": [\"geosite:cn\"]
       },
       {
         \"type\": \"field\",
         \"outboundTag\": \"proxy\",
-        \"ip\": [
-          \"geoip:cn\",
-          \"198.11.0.0/16\",
-          \"203.19.0.0/16\",
-          \"106.11.0.0/16\"
-        ]
+        \"ip\": [\"geoip:cn\"]
       }"
 else
 echo ",
       {
         \"type\": \"field\",
-        \"domain\": [\"geosite:geolocation-!cn\"],
-        \"outboundTag\": \"PROXY2\"
+        \"outboundTag\": \"PROXY2\",
+        \"domain\": [\"geosite:geolocation-!cn\"]
       }"
 fi
 fi
@@ -248,7 +243,7 @@ breakBqRuleObj=',
         "type": "field",
         "network": "tcp",
         "outboundTag": "direct",
-        "ip": ["ext:breakbq.dat:bq"]
+        "ip": ["geoip:bq"]
       }'
 fi
 

@@ -61,6 +61,20 @@ else
 fi
 
 if [ "$param1" = "ws" ]; then
+if echo $host | grep -q ","; then
+  host_param1=${host%,*}
+  host_param2=${host#*,}
+  echo $host_param1 | grep -q "^domain:" && domain=${host_param1#*:}
+  echo $host_param2 | grep -q "^host:" && host=${host_param2#*:}
+else
+  if echo $host | grep -q "^domain:"; then
+    domain=${host#*:}
+    host=""
+  else
+    domain=$host
+  fi
+fi
+[ -n "$domain" ] && domain="\"$domain\""
 [ -n "$host" ] && host="\"$host\""
 network='ws'
 wsSettingsObj='{
@@ -73,7 +87,7 @@ wsSettingsObj='{
     tlssecurity="\"tls\""
     tlsSettingsObj='{
           "allowInsecure": true,
-          "serverName": '${host:-null}'
+          "serverName": '${domain:-null}'
         }'
   fi
 fi

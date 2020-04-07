@@ -5,7 +5,7 @@
 #虚拟网卡名称
 TunDev=v2tun
 #日志级别,留空不使用
-loglevel=warning
+loglevel=
 #放行除tcp,udp外的流量(1放行)
 fxqt=1
 
@@ -210,17 +210,11 @@ status_check() {
 
   echo
   type iptables | grep -q "function" && unset -f iptables
-  echo ✺ nat表 OUTPUT链：
-  iptables -t nat -S OUTPUT 2>&-
+  echo ✺ nat表：
+  iptables -t nat -S 2>&- | grep -wE 'OUTPUT|PREROUTING'
   echo ""
-  echo ✺ mangle表 OUTPUT链：
-  iptables -t mangle -S OUTPUT 2>&-
-  echo ""
-  echo ✺ nat表 PREROUTING链：
-  iptables -t nat -S PREROUTING 2>&-
-  echo ""
-  echo ✺ mangle表 PREROUTING链：
-  iptables -t mangle -S PREROUTING 2>&-
+  echo ✺ mangle表：
+  iptables -t mangle -S 2>&- | grep -wE 'OUTPUT|PREROUTING'
 }
 
 main() {

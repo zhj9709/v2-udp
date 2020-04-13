@@ -41,12 +41,10 @@ if iptables --help 2>&- | grep -q "xtables"; then
   alias iptables="iptables -w"
 else
   iptables() {
-    L=0
-    while true; do  # 循环有限的次数
-      ((L++))
-      ((L>20)) && break
-      /system/bin/iptables $@ 2>&1 | grep -qE 'xtables lock|xtables_lock wait = [1-9]' || break
-    done
+    /system/bin/iptables $@
+    tmp=$?
+    [ "$tmp" = "4" ] && iptables $@
+    return $tmp
   }
 fi
 
@@ -67,12 +65,12 @@ clear_rules() {
 v2tun_start(){
   [ ! -e "/dev/net/tun" ] && mkdir -p /dev/net && ln -s /dev/tun /dev/net/tun && echo 1 > /proc/sys/net/ipv4/ip_forward
   ip tuntap add mode tun $TunDev >/dev/null 2>&1
-  #ip addr add 10.0.0.10/24 dev $TunDev >/dev/null 2>&1
+  ip addr add 10.0.0.10 dev $TunDev >/dev/null 2>&1
   ip link set $TunDev up >/dev/null 2>&1
-  nohup tun2socks --tundev $TunDev --netif-ipaddr 10.0.0.1 --netif-netmask 255.255.255.0 --socks-server-addr 127.0.0.1:1232 --enable-udprelay --loglevel 1 >/dev/null 2>&1 &
+  nohup tun2socks --tundev $TunDev --netif-ipaddr 10.0.0.9 --netif-netmask 255.255.255.0 --socks-server-addr 127.0.0.1:1231 --enable-udprelay --loglevel 1 >/dev/null 2>&1 &
 }
 
-#通过包名得到uid
+# 通过包名得到uid
 get_package_uid() {
   packageName=${1%%_*}  #过滤包名后面的端口
   if echo $packageName | grep -q '[A-Za-z]'; then
@@ -121,11 +119,8 @@ start_rules() {
   # nat PREROUTING
   iptables -t nat -A PREROUTING -s 192.168/16 ! -d 192.168/16 -p tcp -j REDIRECT --to-ports 1230
   [ "$fxqt" != '1' ] && iptables -t nat -A PREROUTING ! -p udp -j REDIRECT --to-ports 1250
-  # 放行规则
-  allow_rules
-}
 
-allow_rules() {
+  # 放行规则
   # 本地TCP放行 nat OUTPUT
   for app in $allowAppsTCP; do
     uid=`get_package_uid $app` || continue
@@ -166,6 +161,7 @@ data_control() {
 }
 
 start_server() {
+  rm -f bin/info
   source bin/makeconfig.bin
   [ "$?" = "111" ] && echo "域名解析失败！" && exit 1
   chmod 777 bin/*
@@ -208,11 +204,11 @@ status_check() {
   [ -n "$ypath" ] && echo "✺ Path： $ypath"
   [ -n "$yhost" ] && echo "✺ Host： $yhost"
 
-  echo
   type iptables | grep -q "function" && unset -f iptables
+  echo
   echo ✺ nat表：
   iptables -t nat -S 2>&- | grep -wE 'OUTPUT|PREROUTING'
-  echo ""
+  echo
   echo ✺ mangle表：
   iptables -t mangle -S 2>&- | grep -wE 'OUTPUT|PREROUTING'
 }

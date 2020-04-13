@@ -23,7 +23,7 @@ if [ "$useTun" = "1" ]; then
 udpInbound='
     {
       "tag": "udp-in",
-      "port": 1232,
+      "port": 1231,
       "protocol": "socks",
       "settings": {
         "auth": "noauth",

@@ -151,7 +151,7 @@ echo "
           \"users\": [{
             \"id\": \"$uuid\",
             \"alterId\": $alterId,
-            \"security\": \"$security\"
+            \"security\": \"${security:-none}\"
           }]
         }]
       },

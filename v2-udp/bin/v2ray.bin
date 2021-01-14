@@ -226,10 +226,10 @@ status_check() {
   type iptables | grep -q "function" && unset -f iptables
   echo
   echo ✺ nat表：
-  iptables -t nat -S 2>&- | grep -wE 'nat_OUT|nat_PRE'
+  iptables -t nat -S 2>&- | busybox grep -wE 'nat_OUT|nat_PRE'
   echo
   echo ✺ mangle表：
-  iptables -t mangle -S 2>&- | grep -wE 'man_OUT|man_PRE'
+  iptables -t mangle -S 2>&- | busybox grep -wE 'man_OUT|man_PRE'
 }
 
 main() {

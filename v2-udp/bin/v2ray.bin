@@ -1,0 +1,250 @@
+#!/system/bin/sh
+
+#全局变量(默认参数)
+#可以通过配置文件设置
+#虚拟网卡名称
+TunDev=v2tun
+#日志级别,留空不使用
+#"debug" | "info" | "warning" | "error" | "none"
+loglevel=
+#放行除tcp,udp外的流量(1放行)
+fxqt=1
+
+#=================================
+DIR="${0%/*}"
+cd $DIR/../
+. ./config.ini
+if [ -z "$addr" ]; then
+  if echo $file | grep -q ","; then
+    file1=${file%,*}
+    file2=${file#*,}
+  else
+    file1=$file
+  fi
+  if [ -n "$file2" ]; then
+    if [ ! -e confs/$file1.ini ] || [ ! -e confs/$file2.ini ]; then
+      echo "请检查配置文件是否正确!" && exit 1
+    fi
+  else
+    if [ ! -e confs/$file1.ini ]; then
+      echo "请检查配置文件是否正确!" && exit 1
+    fi
+  fi
+fi
+export PATH=$DIR:$PATH
+
+# 不支持TPROXY的手机强制使用tun2socks(dns需要)
+if ! grep -q TPROXY /proc/net/ip_tables_targets; then
+  useTun=1
+fi
+
+# 防止执行iptables出问题导致有些规则没执行
+if iptables --help 2>&- | grep -q "xtables"; then
+  alias iptables="iptables -w"
+else
+  iptables() {
+    /system/bin/iptables $@
+    tmp=$?
+    [ "$tmp" = "4" ] && iptables $@
+    return $tmp
+  }
+fi
+
+clear_rules() {
+  iptables -t nat -D OUTPUT -j nat_OUT
+  iptables -t nat -D PREROUTING -j nat_PRE
+  iptables -t mangle -D OUTPUT -j man_OUT
+  iptables -t mangle -D PREROUTING -j man_PRE
+  iptables -t nat -F nat_OUT
+  iptables -t nat -X nat_OUT
+  iptables -t nat -F nat_PRE
+  iptables -t nat -X nat_PRE
+  iptables -t mangle -F man_OUT
+  iptables -t mangle -X man_OUT
+  iptables -t mangle -F man_PRE
+  iptables -t mangle -X man_PRE
+  iptables -D FORWARD -i $TunDev -j ACCEPT
+  iptables -D FORWARD -o $TunDev -j ACCEPT
+  # 关闭程序
+  busybox killall tun2socks v2ray 2>&-
+  # 清除ip规则
+  ip route del local default dev lo table 1234
+  ip rule del fwmark 0x1234 lookup 1234
+  ip tuntap del mode tun $TunDev
+}
+
+v2tun_start(){
+  [ ! -e "/dev/net/tun" ] && mkdir -p /dev/net && ln -s /dev/tun /dev/net/tun && echo 1 > /proc/sys/net/ipv4/ip_forward
+  ip tuntap add mode tun $TunDev >/dev/null 2>&1
+  ip addr add 10.0.0.10 dev $TunDev >/dev/null 2>&1
+  ip link set $TunDev up >/dev/null 2>&1
+  nohup tun2socks --tundev $TunDev --netif-ipaddr 10.0.0.9 --netif-netmask 255.255.255.0 --socks-server-addr 127.0.0.1:1231 --enable-udprelay --loglevel 1 >/dev/null 2>&1 &
+}
+
+# 通过包名得到uid
+get_package_uid() {
+  packageName=${1%%_*}  #过滤包名后面的端口
+  if echo $packageName | grep -q '[A-Za-z]'; then
+    packageInfo=`grep -oE "^$packageName ([0-9])+" /data/system/packages.list`
+    [ $? != 0 ] && return 1
+    echo "$1" | grep -qE '_([0-9])+' && \
+      echo "${packageInfo#* }_${1#*_}" || \
+      echo "${packageInfo#* }"
+  else
+    echo "$1"
+  fi
+}
+
+start_rules() {
+  # mangle OUTPUT
+  iptables -t mangle -N man_OUT
+  iptables -t mangle -N man_PRE
+  iptables -t mangle -A OUTPUT -j man_OUT
+  iptables -t mangle -A PREROUTING -j man_PRE
+  iptables -t mangle -A man_OUT -m owner --gid-owner 2222 -j ACCEPT
+  [ "$wifiProxy" = "1" ] || iptables -t mangle -A man_OUT -o wlan+ -j ACCEPT
+  iptables -t mangle -A man_OUT -o tun+ -j ACCEPT
+  # mangle PREROUTING
+  allow_ip="0/8,127/8,10/8,192.168/16,224/3,169.254/16,100.64/10,172.16/12"
+  iptables -t mangle -A man_PRE -d $allow_ip -j ACCEPT
+  if [ "$useTun" == '1' ]; then
+  # tun2socks/TPROXY 选择
+    v2tun_start
+    ip route replace default dev $TunDev table 1234
+    ip rule add fwmark 0x1234 lookup 1234
+    iptables -t mangle -A man_PRE ! -i tun+ -p udp -j MARK --set-mark 0x1234
+    iptables -t mangle -A man_OUT ! -d 192.168/16 ! -o lo -p udp -j MARK --set-mark 0x1234
+    iptables -A FORWARD -i $TunDev -j ACCEPT
+    iptables -A FORWARD -o $TunDev -j ACCEPT
+  else
+    ip route add local default dev lo table 1234
+    ip rule add fwmark 0x1234 lookup 1234
+    iptables -t mangle -A man_PRE ! -i tun+ -p udp -j TPROXY --on-port 1231 --tproxy-mark 0x1234
+    iptables -t mangle -A man_OUT ! -d 192.168/16 ! -o lo -p udp -j MARK --set-mark 0x1234
+  fi
+  # nat OUTPUT
+  iptables -t nat -N nat_OUT
+  iptables -t nat -N nat_PRE
+  iptables -t nat -A OUTPUT -j nat_OUT
+  iptables -t nat -A PREROUTING -j nat_PRE
+  iptables -t nat -A nat_OUT -m owner --gid-owner 2222 -j ACCEPT
+  [ "$wifiProxy" = "1" ] || iptables -t nat -A nat_OUT -o wlan+ -j ACCEPT
+  iptables -t nat -A nat_OUT -o tun+ -j ACCEPT
+  iptables -t nat -A nat_OUT -o lo -j ACCEPT
+  # 防止WiFi共享获取不到ip
+  iptables -t nat -A nat_OUT -d 192.168/16 -j ACCEPT
+  iptables -t nat -A nat_OUT -p tcp -j REDIRECT --to-ports 1230
+  [ "$fxqt" != '1' ] && iptables -t nat -A nat_OUT ! -p udp -j REDIRECT --to-ports 1250
+  # nat PREROUTING
+  iptables -t nat -A nat_PRE -s 192.168/16 ! -d 192.168/16 -p tcp -j REDIRECT --to-ports 1230
+  [ "$fxqt" != '1' ] && iptables -t nat -A nat_PRE ! -p udp -j REDIRECT --to-ports 1250
+
+  # 放行规则
+  # 本地TCP放行 nat OUTPUT
+  for app in $allowAppsTCP; do
+    uid=`get_package_uid $app` || continue
+    iptables -t nat -I nat_OUT -p tcp -m owner --uid ${uid%_*} `echo $uid|grep -q '_' && echo "-m multiport --dport ${uid#*_}"` -j ACCEPT
+  done
+  # 本地UDP放行 mangle OUTPUT
+  for app in $allowAppsUDP; do
+    uid=`get_package_uid $app` || continue
+    iptables -t mangle -I man_OUT -p udp -m owner --uid ${uid%_*} `echo $uid|grep -q '_' && echo "-m multiport --dport ${uid#*_}"` -j ACCEPT
+  done
+  # 本地全局放行 nat OUTPUT
+  for app in $allowApps; do
+    uid=`get_package_uid $app` || continue
+    iptables -t nat -I nat_OUT -m owner --uid $uid -j ACCEPT
+  done
+  # 本地全局放行 mangle OUTPUT
+  for app in $allowApps; do
+    uid=`get_package_uid $app` || continue
+    iptables -t mangle -I man_OUT -m owner --uid $uid -j ACCEPT
+  done
+  # 本地端口放行 nat OUTPUT & mangle OUTPUT
+  [ "$allowTcpPorts" != "" ] && iptables -t nat -I nat_OUT -p tcp -m multiport --dports $allowTcpPorts -j ACCEPT
+  [ "$allowUdpPorts" != "" ] && iptables -t mangle -I man_OUT -p udp -m multiport --dports $allowUdpPorts -j ACCEPT
+  # 共享端口放行 nat PREROUTING & mangle PREROUTING
+  [ "$allowShareTcpPorts" != "" ] && iptables -t nat -I nat_PRE -p tcp -m multiport --dports $allowShareTcpPorts -j ACCEPT
+  [ "$allowShareUdpPorts" != "" ] && iptables -t mangle -I man_PRE -p udp -m multiport --dports $allowShareUdpPorts -j ACCEPT
+}
+
+data_control() {
+  if [ "$netstat" != "$1" -a "$kgwl" = "1" ]; then
+  wifiip=$(ip addr show wlan0 2>&- | grep 'inet')
+    if [ "$wifiip" = "" ]; then
+      [ "$1" = "y" ] && svc data enable && sleep 0.3
+      [ "$1" = "n" ] && svc data disable
+      netstat="$1"
+    fi
+  fi
+}
+
+start_server() {
+  rm -f bin/info
+  source bin/makeconfig.bin
+  [ "$?" = "111" ] && echo "域名解析失败！" && exit 1
+  chmod 777 bin/*
+  ulimit -n 65535
+  [ -n "$loglevel" ] && outfile="bin/v2ray.log" || outfile="/dev/null"
+  [ "$outfile" = "/dev/null" ] && rm -f bin/v2ray.log
+  (busybox setuidgid 0:2222 v2ray -config bin/config.json &>$outfile &)
+}
+
+clear_files() {
+  sleep 0.1
+  rm -f confs/*.bak bin/*.bak bin/*.conf
+}
+
+status_check() {
+  ip addr | grep global | grep -E '[1-9]{1,3}[0-9]{0,2}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | \
+  while read line
+  do
+    [ -z "$line" ] && break
+    typeset -L17 netcard=${line##* }
+    IP=${line%%/*}
+    echo "$netcard${IP##* }"
+  done
+  echo
+  [ -n "$IP" ] && echo
+
+  [ -n "`busybox pidof v2ray`" -a -f "bin/info" ] && . bin/info || rm -f bin/info
+  echo -n "✺ Core： "
+  busybox pidof "v2ray" >/dev/null && echo -n "✔v2ray  " || echo -n "✘v2ray  "
+  busybox pidof "tun2socks" >/dev/null && echo -n "✔tun2socks  "
+
+  echo
+  [ -f "bin/info" ] && echo
+  [ -n "$xfile" ] && echo "✺ 已加载配置文件： $xfile"
+  [ -n "$xaddr" ] && echo "✺ Addr： $xaddr"
+  [ -n "$xpath" ] && echo "✺ Path： $xpath"
+  [ -n "$xhost" ] && echo "✺ Host： $xhost"
+  [ -n "$yfile" ] && echo "✺ 已加载配置文件： $yfile"
+  [ -n "$yaddr" ] && echo "✺ Addr： $yaddr"
+  [ -n "$ypath" ] && echo "✺ Path： $ypath"
+  [ -n "$yhost" ] && echo "✺ Host： $yhost"
+
+  type iptables | grep -q "function" && unset -f iptables
+  echo
+  echo ✺ nat表：
+  iptables -t nat -S 2>&- | grep -wE 'nat_OUT|nat_PRE'
+  echo
+  echo ✺ mangle表：
+  iptables -t mangle -S 2>&- | grep -wE 'man_OUT|man_PRE'
+}
+
+main() {
+  if [ "$1" = "stop" ]; then
+    rm -f bin/info 2>&-
+    clear_rules 2>&-
+  elif [ -z "$1" -o "$1" = "start" ]; then
+    clear_rules 2>&-
+    start_server
+    start_rules 2>&-
+    data_control n
+    data_control y
+  fi
+  (clear_files &)
+  status_check
+}
+
+main $1

@@ -76,7 +76,7 @@ v2.6.1
 
 2021.01.14
 
-1. 替换核心为[Xray-core v1.2.1](https://github.com/XTLS/Xray-core/releases/tag/v1.2.)(直接把xray改名v2ray后替换的，需要自己替换的这样替换就行了)
+1. 替换核心为[Xray-core v1.2.1](https://github.com/XTLS/Xray-core/releases/tag/v1.2.1)(直接把xray改名v2ray后替换的，需要自己替换的这样替换就行了)
 2. 修复 `proxy_mode="gfw"` 时的路由设置问题 (该项设置在makeconfig.bin里)
 3. 更新geoip.dat, geosite.dat
 

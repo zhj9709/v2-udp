@@ -80,3 +80,8 @@ v2.6.1
 2. 修复 `proxy_mode="gfw"` 时的路由设置问题 (该项设置在makeconfig.bin里)
 3. 更新geoip.dat, geosite.dat
 
+#### v2.9
+
+2021.01.18
+
+1. 默认禁止ipv6联网，可在 `v2ray.bin` 里设置

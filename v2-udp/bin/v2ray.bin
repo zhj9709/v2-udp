@@ -77,7 +77,7 @@ clear_rules() {
   if ip6tables -t mangle -S 2>&- | grep -q 0x1122; then
     ip6tables -t mangle -D OUTPUT ! -p tcp -m owner --uid 0 -j ACCEPT
     ip6tables -t mangle -D OUTPUT ! -o wlan+ -j MARK --set-mark 0x1122
-    ip6tables -t mangle -D PREROUTING ! -d fe80::/10 ! -i tun+ -j MARK --set-mark 0x1122
+    ip6tables -t mangle -D PREROUTING ! -i tun+ -j MARK --set-mark 0x1122
     ip -6 rule del fwmark 0x1122 unreachable
   fi
 }
@@ -152,7 +152,7 @@ start_rules() {
   if [ "$denyIPV6" == 1 ]; then
     ip6tables -t mangle -A OUTPUT ! -p tcp -m owner --uid 0 -j ACCEPT
     ip6tables -t mangle -A OUTPUT ! -o wlan+ -j MARK --set-mark 0x1122
-    ip6tables -t mangle -A PREROUTING ! -d fe80::/10 ! -i tun+ -j MARK --set-mark 0x1122
+    ip6tables -t mangle -A PREROUTING ! -i tun+ -j MARK --set-mark 0x1122
     ip -6 rule add fwmark 0x1122 unreachable
   fi
 

@@ -53,10 +53,10 @@ else
 fi
 
 clear_rules() {
-  iptables -t nat -D OUTPUT -j nat_OUT
-  iptables -t nat -D PREROUTING -j nat_PRE
-  iptables -t mangle -D OUTPUT -j man_OUT
-  iptables -t mangle -D PREROUTING -j man_PRE
+  while iptables -t nat -D OUTPUT -j nat_OUT; do :; done
+  while iptables -t nat -D PREROUTING -j nat_PRE; do :; done
+  while iptables -t mangle -D OUTPUT -j man_OUT; do :; done
+  while iptables -t mangle -D PREROUTING -j man_PRE; do :; done
   iptables -t nat -F nat_OUT
   iptables -t nat -X nat_OUT
   iptables -t nat -F nat_PRE
@@ -65,20 +65,20 @@ clear_rules() {
   iptables -t mangle -X man_OUT
   iptables -t mangle -F man_PRE
   iptables -t mangle -X man_PRE
-  iptables -D FORWARD -i $TunDev -j ACCEPT
-  iptables -D FORWARD -o $TunDev -j ACCEPT
+  while iptables -D FORWARD -i $TunDev -j ACCEPT; do :; done
+  while iptables -D FORWARD -o $TunDev -j ACCEPT; do :; done
   # 关闭程序
   busybox killall tun2socks v2ray 2>&-
   # 清除ip规则
-  ip route del local default dev lo table 1234
-  ip rule del fwmark 0x1234 lookup 1234
+  while ip route del local default dev lo table 1234; do :; done
+  while ip rule del fwmark 0x1234 lookup 1234; do :; done
   ip tuntap del mode tun $TunDev
   # 清除IPV6禁网规则
   if ip6tables -t mangle -S 2>&- | grep -q 0x1122; then
-    ip6tables -t mangle -D OUTPUT ! -p tcp -m owner --uid 0 -j ACCEPT
-    ip6tables -t mangle -D OUTPUT ! -o wlan+ -j MARK --set-mark 0x1122
-    ip6tables -t mangle -D PREROUTING ! -i tun+ -j MARK --set-mark 0x1122
-    ip -6 rule del fwmark 0x1122 unreachable
+    while ip6tables -t mangle -D OUTPUT ! -p tcp -m owner --uid 0 -j ACCEPT; do :; done
+    while ip6tables -t mangle -D OUTPUT ! -o wlan+ -j MARK --set-mark 0x1122; do :; done
+    while ip6tables -t mangle -D PREROUTING ! -i tun+ -j MARK --set-mark 0x1122; do :; done
+    while ip -6 rule del fwmark 0x1122 unreachable; do :; done
   fi
 }
 

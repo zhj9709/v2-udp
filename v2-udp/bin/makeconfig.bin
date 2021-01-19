@@ -128,10 +128,8 @@ tcpSettingsObj='{
         }'
 fi
 
-if [ "$param2" != "tls" ]; then
-  get_ip
-  [ -z "$ip" ] && return 111
-fi
+get_ip
+[ -z "$ip" ] && return 111
 
 echo "${2}file"=$3 >> bin/info
 echo "${2}addr"=$addr >> bin/info
@@ -140,10 +138,16 @@ if [ "$network" != "kcp" ]; then
   echo "${2}host"=$host >> bin/info
 fi
 
+if [ "$protocol" != "vless" ]; then
+  protocol="vmess"
+else
+  encryption=',
+            "encryption": "none"'
+fi
 echo "
     {
       \"tag\": \"$1\",
-      \"protocol\": \"vmess\",
+      \"protocol\": \"$protocol\",
       \"settings\": {
         \"vnext\": [{
           \"address\": \"${addr%:*}\",
@@ -151,7 +155,7 @@ echo "
           \"users\": [{
             \"id\": \"$uuid\",
             \"alterId\": $alterId,
-            \"security\": \"${security:-none}\"
+            \"security\": \"${security:-none}\"$encryption
           }]
         }]
       },

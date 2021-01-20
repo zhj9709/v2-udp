@@ -118,9 +118,13 @@ kcpSettingsObj=',
         }'
 fi
 
-if [ -z "$network" ]; then
+if [ -n "$param2" -a "$param1" = "tcp" ]; then
 network='tcp'
-tcpSettingsObj=',
+fi
+
+if [ -z "$network" ]; then
+network='http'
+tcpHttpSettingsObj=',
         "tcpSettings": {
           "header": { 
             "type": "http",
@@ -142,7 +146,7 @@ get_ip
 echo "${2}file"=$3 >> bin/info
 echo "${2}addr"=$addr >> bin/info
 if [ "$network" != "kcp" ]; then
-  echo "${2}path"=$path >> bin/info
+  [ "$network" = "tcp" ] || echo "${2}path"=$path >> bin/info
   echo "${2}host"=$host >> bin/info
 fi
 
@@ -153,7 +157,7 @@ if [ "$protocol" != "vless" ]; then
             "security": "'$security'"'
 else
   if [ "$xtlsFlag" = "xtls" ]; then
-    flow=',
+    xtlsflow=',
             "flow": "'$flow'"'
   fi
   encryption=',
@@ -168,12 +172,12 @@ echo "
           \"address\": \"${addr%:*}\",
           \"port\": ${addr#*:},
           \"users\": [{
-            \"id\": \"$uuid\"$userSecurity$flow$encryption
+            \"id\": \"$uuid\"$userSecurity$xtlsflow$encryption
           }]
         }]
       },
       \"streamSettings\": {
-        \"network\": \"$network\"$tlsSettingsObj$wsSettingsObj$tcpSettingsObj$kcpSettingsObj
+        \"network\": \"$network\"$tlsSettingsObj$wsSettingsObj$tcpHttpSettingsObj$kcpSettingsObj
       }
     },"
 }

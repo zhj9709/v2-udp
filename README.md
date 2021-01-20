@@ -82,4 +82,16 @@ v2.6.2
 
 #### v2.9
 
-1. 默认禁止ipv6联网，可在 `v2ray.bin` 里设置
+1. 默认禁止ipv6联网(不会影响wifi的ipv6)，可在 `v2ray.bin` 里设置 (建议直接在APN里设置仅ipv4)
+
+2. 增加了对 `vless` 的支持，使用 `vless` 需要在配置文件中添加 `protocol="vless"`
+
+3. 增加 `xtls` 设置，设置方法参考如下：
+
+   ```
+   method="tcp:xtls"
+   protocol="vless"
+   flow="xtls-rprx-direct"
+   ```
+
+   

@@ -60,13 +60,14 @@ else
   param1=$method
 fi
 
-if [ "$param1" = "ws" ]; then
+if [ "$param2" = "tls" -o "$param2" = "xtls" ]; then
 if echo $host | grep -q ","; then
   host_param1=${host%,*}
   host_param2=${host#*,}
   echo $host_param1 | grep -q "^domain:" && domain=${host_param1#*:}
   echo $host_param2 | grep -q "^host:" && host=${host_param2#*:}
 else
+  # host可设置为 domain:baidu.com,host:qq.com的形式(tls下有用)
   if echo $host | grep -q "^domain:"; then
     domain=${host#*:}
     host=""
@@ -74,28 +75,34 @@ else
     domain=$host
   fi
 fi
-[ -n "$domain" ] && domain="\"$domain\""
-[ -n "$host" ] && host="\"$host\""
+
+[ -n "$domain" ] && serverName="\"$domain\""
+[ "$param2" = "xtls" ] && xtlsFlag="xtls"
+tlsSettingsObj=',
+        "security": "'$param2'",
+        "'$param2'Settings": {
+          "allowInsecure": true,
+          "serverName": '${serverName:-null}'
+        }'
+fi
+
+[ -n "$host" ] && wsHost="\"$host\""
+if [ "$param1" = "ws" ]; then
 network='ws'
-wsSettingsObj='{
+wsSettingsObj=',
+        "wsSettings": {
           "path": "'${path:-/}'",
           "headers": {
-            "Host": '${host:-null}'
+            "Host": '${wsHost:-null}'
           }
         }'
-  if [ -n "$param2" ]; then
-    tlssecurity="\"tls\""
-    tlsSettingsObj='{
-          "allowInsecure": true,
-          "serverName": '${domain:-null}'
-        }'
-  fi
 fi
 
 if [ "$param1" = "kcp" ]; then
 [ -n "$param2" ] && kcpType="\"$param2\""
 network='kcp'
-kcpSettingsObj='{
+kcpSettingsObj=',
+        "kcpSettings": {
           "mtu": 1350,
           "tti": 50,
           "uplinkCapacity": 12,
@@ -113,12 +120,13 @@ fi
 
 if [ -z "$network" ]; then
 network='tcp'
-tcpSettingsObj='{
+tcpSettingsObj=',
+        "tcpSettings": {
           "header": { 
             "type": "http",
             "request": {
               "version": "1.1",
-              "method": "'$method'",
+              "method": "'$param1'",
               "path": "'$path'",
               "headers": {
                 "Host": "'$host'"
@@ -140,7 +148,14 @@ fi
 
 if [ "$protocol" != "vless" ]; then
   protocol="vmess"
+  userSecurity=',
+            "alterId": '$alterId',
+            "security": "'$security'"'
 else
+  if [ "$xtlsFlag" = "xtls" ]; then
+    flow=',
+            "flow": "'$flow'"'
+  fi
   encryption=',
             "encryption": "none"'
 fi
@@ -153,20 +168,12 @@ echo "
           \"address\": \"${addr%:*}\",
           \"port\": ${addr#*:},
           \"users\": [{
-            \"id\": \"$uuid\",
-            \"alterId\": $alterId,
-            \"security\": \"${security:-none}\"$encryption
+            \"id\": \"$uuid\"$userSecurity$flow$encryption
           }]
         }]
       },
       \"streamSettings\": {
-        \"network\": \"$network\",
-        \"security\": ${tlssecurity:-null},
-        \"tlsSettings\": ${tlsSettingsObj:-null},
-        \"tcpSettings\": ${tcpSettingsObj:-null},
-        \"kcpSettings\": ${kcpSettingsObj:-null},
-        \"wsSettings\": ${wsSettingsObj:-null},
-        \"httpSettings\": ${httpSettingsObj:-null}
+        \"network\": \"$network\"$tlsSettingsObj$wsSettingsObj$tcpSettingsObj$kcpSettingsObj
       }
     },"
 }

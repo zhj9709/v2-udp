@@ -149,7 +149,7 @@ start_rules() {
   [ "$fxqt" != '1' ] && iptables -t nat -A nat_PRE ! -p udp -j REDIRECT --to-ports 1250
 
   # IPV6禁网
-  if [ "$denyIPV6" == 1 ]; then
+  if [ "$denyIPV6" = 1 ]; then
     ip6tables -t mangle -A OUTPUT -p icmpv6 -m owner --uid 0 -j ACCEPT
     ip6tables -t mangle -A OUTPUT ! -o wlan+ -j MARK --set-mark 0x1122
     ip6tables -t mangle -P FORWARD DROP

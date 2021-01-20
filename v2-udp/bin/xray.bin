@@ -3,7 +3,7 @@
 #全局变量(默认参数)
 #可以通过配置文件设置
 #虚拟网卡名称
-TunDev=v2tun
+TunDev=xtun
 #日志级别,留空不使用
 #"debug" | "info" | "warning" | "error" | "none"
 loglevel=
@@ -68,7 +68,7 @@ clear_rules() {
   while iptables -D FORWARD -i $TunDev -j ACCEPT; do :; done
   while iptables -D FORWARD -o $TunDev -j ACCEPT; do :; done
   # 关闭程序
-  busybox killall tun2socks v2ray 2>&-
+  busybox killall tun2socks xray 2>&-
   # 清除ip规则
   while ip route del local default dev lo table 1234; do :; done
   while ip rule del fwmark 0x1234 lookup 1234; do :; done
@@ -202,9 +202,9 @@ start_server() {
   [ "$?" = "111" ] && echo "域名解析失败！" && exit 1
   chmod 777 bin/*
   ulimit -n 65535
-  [ -n "$loglevel" ] && outfile="bin/v2ray.log" || outfile="/dev/null"
-  [ "$outfile" = "/dev/null" ] && rm -f bin/v2ray.log
-  (busybox setuidgid 0:2222 v2ray -config bin/config.json &>$outfile &)
+  [ -n "$loglevel" ] && outfile="bin/xray.log" || outfile="/dev/null"
+  [ "$outfile" = "/dev/null" ] && rm -f bin/xray.log
+  (busybox setuidgid 0:2222 xray -config bin/config.json &>$outfile &)
 }
 
 clear_files() {
@@ -224,9 +224,9 @@ status_check() {
   echo
   [ -n "$IP" ] && echo
 
-  [ -n "`busybox pidof v2ray`" -a -f "bin/info" ] && . bin/info || rm -f bin/info
+  [ -n "`busybox pidof xray`" -a -f "bin/info" ] && . bin/info || rm -f bin/info
   echo -n "✺ Core： "
-  busybox pidof "v2ray" >/dev/null && echo -n "✔v2ray  " || echo -n "✘v2ray  "
+  busybox pidof "xray" >/dev/null && echo -n "✔xray  " || echo -n "✘xray  "
   busybox pidof "tun2socks" >/dev/null && echo -n "✔tun2socks  "
 
   echo

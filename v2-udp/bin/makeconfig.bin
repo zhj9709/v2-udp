@@ -120,10 +120,11 @@ fi
 
 if [ -n "$param2" -a "$param1" = "tcp" ]; then
 network='tcp'
+tcpOnly="yes"
 fi
 
 if [ -z "$network" ]; then
-network='http'
+network='tcp'
 tcpHttpSettingsObj=',
         "tcpSettings": {
           "header": { 
@@ -146,7 +147,7 @@ get_ip
 echo "${2}file"=$3 >> bin/info
 echo "${2}addr"=$addr >> bin/info
 if [ "$network" != "kcp" ]; then
-  [ "$network" = "tcp" ] || echo "${2}path"=$path >> bin/info
+  [ -z "$tcpOnly" ] && echo "${2}path"=$path >> bin/info
   echo "${2}host"=$host >> bin/info
 fi
 

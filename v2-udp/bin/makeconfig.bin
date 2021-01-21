@@ -156,6 +156,7 @@ if [ "$protocol" != "vless" ]; then
             "alterId": '$alterId',
             "security": "'$security'"'
 else
+  [ -z "$flow" ] && flow="xtls-rprx-origin"
   if [ "$xtlsFlag" = "xtls" ]; then
     xtlsflow=',
             "flow": "'$flow'"'

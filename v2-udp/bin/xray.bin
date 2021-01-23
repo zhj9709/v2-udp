@@ -3,7 +3,7 @@
 #全局变量(默认参数)
 #可以通过配置文件设置
 #虚拟网卡名称
-TunDev=xtun
+TunDev=tunx
 #日志级别,留空不使用
 #"debug" | "info" | "warning" | "error" | "none"
 loglevel=

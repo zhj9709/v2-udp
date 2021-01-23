@@ -5,6 +5,9 @@
 # cn  国内服务器代理geoip:cn,geosite:cn,其他使用国外服务器
 proxy_mode="cn"
 
+# 流量探测 true/false
+sniffing="false"
+
 get_ip() {
   server=${addr%:*}
   if echo $server | grep -qE '[a-z\|A-Z]'; then
@@ -30,7 +33,7 @@ udpInbound='
         "udp": true
       },
       "sniffing": {
-        "enabled": true,
+        "enabled": '$sniffing',
         "destOverride": ["http","tls"]
       }
     }'
@@ -45,7 +48,7 @@ udpInbound='
         "followRedirect": true
       },
       "sniffing": {
-        "enabled": true,
+        "enabled": '$sniffing',
         "destOverride": ["http","tls"]
       }
     }'
@@ -377,7 +380,7 @@ echo "{
         \"followRedirect\": true
       },
       \"sniffing\": {
-        \"enabled\": true,
+        \"enabled\": $sniffing,
         \"destOverride\": [\"http\",\"tls\"]
       }
     },$udpInbound

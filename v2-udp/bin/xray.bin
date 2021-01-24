@@ -207,8 +207,11 @@ data_control() {
 
 start_server() {
   rm -f bin/info
-  source bin/makeconfig.bin
-  [ "$?" = "111" ] && echo "域名解析失败！" && exit 1
+  #是否保留上次配置,不重新生成新的
+  if [ "$keep" != "1" ]; then
+    source bin/makeconfig.bin
+    [ "$?" = "111" ] && echo "域名解析失败！" && exit 1
+  fi
   chmod 777 bin/*
   ulimit -n 65535
   [ -n "$loglevel" ] && outfile="bin/xray.log" || outfile="/dev/null"

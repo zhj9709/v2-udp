@@ -84,7 +84,7 @@ v2.6.2
 
 2021.01.20
 
-1. 默认禁止ipv6联网(不会影响wifi的ipv6)，可在 `v2ray.bin` 里设置 (建议直接在APN里设置仅ipv4)
+1. 默认禁止ipv6联网(不会影响wifi的ipv6)，可在 `xray.bin` 里设置 (建议直接在APN里设置仅ipv4)
 
 2. 增加了对 `vless` 的支持，使用 `vless` 需要在配置文件中添加 `protocol="vless"`
 
@@ -96,4 +96,8 @@ v2.6.2
    flow="xtls-rprx-direct"
    ```
 
-   
+
+#### v3.0
+
+1. 默认关闭流量探测(sniffing)
+2. 新增保留上次生成的配置文件选项

@@ -11,7 +11,7 @@ sniffing="false"
 get_ip() {
   server=${addr%:*}
   if echo $server | grep -qE '[a-z\|A-Z]'; then
-    ip=`busybox time 1 busybox wget -qO- -T1 http://119.29.29.29/d?dn=$server | busybox cut -d';' -f1`
+    ip=`busybox timeout 1 busybox wget -qO- -T1 http://119.29.29.29/d?dn=$server | busybox cut -d';' -f1`
     echo $ip | grep -q '\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\}' || ip=""
     if [ -z "$ip" ]; then
       ip=`ping -c1 -W1 $server | grep 'PING' | busybox cut -d'(' -f2 |  busybox cut -d')' -f1`

@@ -50,6 +50,11 @@ udpInbound='
       "sniffing": {
         "enabled": '$sniffing',
         "destOverride": ["http","tls"]
+      },
+      "streamSettings": {
+        "sockopt": {
+          "tproxy": "tproxy"
+        }
       }
     }'
 fi

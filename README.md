@@ -85,19 +85,19 @@ v2.6.2
 2021.01.20
 
 1. 默认禁止ipv6联网(不会影响wifi的ipv6)，可在 `xray.bin` 里设置 (建议直接在APN里设置仅ipv4)
-
 2. 增加了对 `vless` 的支持，使用 `vless` 需要在配置文件中添加 `protocol="vless"`
-
 3. 增加 `xtls` 设置，设置方法参考如下：
-
    ```
    method="tcp:xtls"
    protocol="vless"
    flow="xtls-rprx-direct"
    ```
 
-
 #### v3.0
 
-1. 默认关闭流量探测(sniffing)
-2. 新增保留上次生成的配置文件选项
+2021.01.26
+
+1. 默认关闭流量探测(`makeconfig.bin`里设置)
+2. 新增保留上次生成的配置文件选项(需要用到这功能请添加 `keep=1`)
+3. 修复一些内网未放行的问题
+4. 更新了busybox(v1.31.1)

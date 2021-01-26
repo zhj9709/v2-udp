@@ -75,6 +75,7 @@ clear_rules() {
   busybox killall tun2socks xray 2>&-
   # 清除ip规则
   while ip route del local default dev lo table 1234; do :; done
+  while ip route del default dev $TunDev table 1234; do :; done
   while ip rule del fwmark 0x1234 lookup 1234; do :; done
   ip tuntap del mode tun $TunDev
   # 清除IPV6禁网规则
@@ -123,7 +124,7 @@ start_rules() {
   [ "$wifiProxy" = "1" ] || iptables -t mangle -A man_OUT -o wlan+ -j ACCEPT
   iptables -t mangle -A man_OUT -o tun+ -j ACCEPT
   # mangle PREROUTING
-  allow_ip="0/8,127/8,10/8,192.168/16,224/3,169.254/16,100.64/10,172.16/12"
+  allow_ip="10/8,100/8,127/8,169.254/16,172.16/12,192/24,192.168/16,224/4,240/4"
   iptables -t mangle -A man_PRE -d $allow_ip -j ACCEPT
   if [ "$useTun" == '1' ]; then
   # tun2socks/TPROXY 选择

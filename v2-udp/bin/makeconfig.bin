@@ -11,7 +11,7 @@ sniffing="false"
 get_ip() {
   server=${addr%:*}
   if echo $server | grep -qE '[a-z\|A-Z]'; then
-    ip=`busybox wget -qO- -T1 http://119.29.29.29/d?dn=$server 2>/dev/null | busybox cut -d';' -f1`
+    ip=`busybox wget -qO- -T1 http://119.29.29.29/d?dn=$server | busybox cut -d';' -f1`
     echo $ip | grep -q '\([0-9]\{1,3\}\.\)\{3\}[0-9]\{1,3\}' || ip=""
     if [ -z "$ip" ]; then
       ip=`ping -c1 -W1 $server | grep 'PING' | busybox cut -d'(' -f2 |  busybox cut -d')' -f1`
@@ -21,6 +21,9 @@ get_ip() {
   fi
   addr=$ip:${addr#*:}
 }
+
+# 如果使用双配置文件,则开启sniffing
+[ -n "$file2" ] && sniffing="true"
 
 if [ "$useTun" = "1" ]; then
 udpInbound='
@@ -50,11 +53,6 @@ udpInbound='
       "sniffing": {
         "enabled": '$sniffing',
         "destOverride": ["http","tls"]
-      },
-      "streamSettings": {
-        "sockopt": {
-          "tproxy": "tproxy"
-        }
       }
     }'
 fi
@@ -149,7 +147,7 @@ tcpHttpSettingsObj=',
         }'
 fi
 
-get_ip
+get_ip 2>&-
 [ -z "$ip" ] && return 111
 
 echo "${2}file"=$3 >> bin/info
@@ -162,29 +160,33 @@ fi
 if [ "$protocol" != "vless" ]; then
   protocol="vmess"
   userSecurity=',
-            "alterId": '$alterId',
-            "security": "'$security'"'
+                "alterId": '$alterId',
+                "security": "'$security'"'
 else
   [ -z "$flow" ] && flow="xtls-rprx-origin"
   if [ "$xtlsFlag" = "xtls" ]; then
     xtlsflow=',
-            "flow": "'$flow'"'
+                "flow": "'$flow'"'
   fi
   encryption=',
-            "encryption": "none"'
+                "encryption": "none"'
 fi
 echo "
     {
       \"tag\": \"$1\",
       \"protocol\": \"$protocol\",
       \"settings\": {
-        \"vnext\": [{
-          \"address\": \"${addr%:*}\",
-          \"port\": ${addr#*:},
-          \"users\": [{
-            \"id\": \"$uuid\"$userSecurity$xtlsflow$encryption
-          }]
-        }]
+        \"vnext\": [
+          {
+            \"address\": \"${addr%:*}\",
+            \"port\": ${addr#*:},
+            \"users\": [
+              {
+                \"id\": \"$uuid\"$userSecurity$xtlsflow$encryption
+              }
+            ]
+          }
+        ]
       },
       \"streamSettings\": {
         \"network\": \"$network\"$tlsSettingsObj$wsSettingsObj$tcpHttpSettingsObj$kcpSettingsObj

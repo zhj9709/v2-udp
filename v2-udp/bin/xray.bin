@@ -9,8 +9,6 @@ TunDev=tunx
 loglevel=
 #放行除tcp,udp外的流量(1放行)
 fxqt=1
-#IPV6禁网
-denyIPV6=1
 
 #=================================
 DIR="${0%/*}"
@@ -80,7 +78,7 @@ clear_rules() {
   ip tuntap del mode tun $TunDev
   # 清除IPV6禁网规则
   if ip6tables -t mangle -S 2>&- | grep -q '0x1122'; then
-    while ip6tables -t mangle -D OUTPUT -p icmpv6 -m owner --uid 0 -j ACCEPT; do :; done
+    while ip6tables -t mangle -D OUTPUT -p icmpv6 -j ACCEPT; do :; done
     while ip6tables -t mangle -D OUTPUT ! -o wlan+ -j MARK --set-mark 0x1122; do :; done
     ip6tables -t mangle -P FORWARD ACCEPT
     while ip -6 rule del fwmark 0x1122 unreachable; do :; done
@@ -160,7 +158,7 @@ start_rules() {
 
   # IPV6禁网
   if [ "$denyIPV6" = 1 ]; then
-    ip6tables -t mangle -A OUTPUT -p icmpv6 -m owner --uid 0 -j ACCEPT
+    ip6tables -t mangle -A OUTPUT -p icmpv6 -j ACCEPT
     ip6tables -t mangle -A OUTPUT ! -o wlan+ -j MARK --set-mark 0x1122
     ip6tables -t mangle -P FORWARD DROP
     ip -6 rule add fwmark 0x1122 unreachable

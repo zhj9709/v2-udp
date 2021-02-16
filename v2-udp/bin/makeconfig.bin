@@ -232,7 +232,13 @@ echo "\"dns\": {
           \"geosite:cn\"
         ]
       },
-      \"$DNS2\"
+      {
+        \"address\": \"$DNS2\",
+        \"port\": 53,
+        \"domains\": [
+          \"geosite:geolocation-!cn\"
+        ]
+      }
     ]
   }"
 else
@@ -251,24 +257,23 @@ if [ "$proxy_mode" = "cn" ]; then
 echo ",
       {
         \"type\": \"field\",
-        \"outboundTag\": \"proxy\",
-        \"domain\": [\"geosite:cn\"]
+        \"domain\": [\"geosite:cn\"],
+        \"outboundTag\": \"proxy\"
       },
       {
         \"type\": \"field\",
-        \"outboundTag\": \"proxy\",
-        \"ip\": [\"geoip:cn\"]
+        \"ip\": [\"geoip:cn\"],
+        \"outboundTag\": \"proxy\"
       }"
 else
 echo ",
       {
         \"type\": \"field\",
-        \"outboundTag\": \"PROXY2\",
-        \"domain\": [\"geosite:geolocation-!cn\"]
+        \"domain\": [\"geosite:geolocation-!cn\"],
+        \"outboundTag\": \"PROXY2\"
       },
       {
         \"type\": \"field\",
-        \"outboundTag\": \"PROXY2\",
         \"ip\": [
           \"149.154.167.99/32\",
           \"149.154.175.10/32\",
@@ -315,11 +320,11 @@ echo ",
           \"2001:b28:f23d::/48\",
           \"2001:b28:f23f::/48\",
           \"2001:67c:4e8::/48\"
-        ]
+        ],
+        \"outboundTag\": \"PROXY2\"
       },
       {
         \"type\": \"field\",
-        \"outboundTag\": \"PROXY2\",
         \"ip\": [
           \"geoip:ae\",
           \"geoip:au\",
@@ -355,7 +360,8 @@ echo ",
           \"geoip:tw\",
           \"geoip:us\",
           \"geoip:vn\"
-        ]
+        ],
+        \"outboundTag\": \"PROXY2\"
       }"
 fi
 fi
@@ -366,7 +372,6 @@ breakBqRuleObj=',
       {
         "type": "field",
         "network": "tcp",
-        "outboundTag": "direct",
         "domain": [
           "video.qq.com",
           "cache.video.iqiyi.com",
@@ -377,7 +382,8 @@ breakBqRuleObj=',
           "pcweb2.api.mgtv.com",
           "interface3.music.163.com",
           "guide-acs.m.taobao.com"
-        ]
+        ],
+        "outboundTag": "direct"
       }'
 fi
 
@@ -402,15 +408,15 @@ echo "{
   ],
   \"outbounds\": [$outboundsObj
     {
+      \"tag\": \"direct\",
       \"protocol\": \"freedom\",
       \"settings\": {
         \"domainStrategy\": \"UseIP\"
-      },
-      \"tag\": \"direct\"
+      }
     },
     {
-      \"protocol\": \"dns\",
-      \"tag\": \"dns-out\"
+      \"tag\": \"dns-out\",
+      \"protocol\": \"dns\"
     }
   ],
   `getDNSObj`,
@@ -420,7 +426,7 @@ echo "{
       {
         \"type\": \"field\",
         \"network\": \"udp\",
-        \"port\": \"53\",
+        \"port\": 53,
         \"inboundTag\": [\"udp-in\"],
         \"outboundTag\": \"dns-out\"
       }$breakBqRuleObj`getRuleObj`
